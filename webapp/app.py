@@ -180,6 +180,10 @@ async def _rate_limit(request, call_next):
     return await call_next(request)
 
 
+# Path della documentazione interattiva (Swagger UI / ReDoc) generata da FastAPI.
+_DOCS_PATHS = ("/docs", "/redoc")
+
+
 @app.middleware("http")
 async def _security_headers(request, call_next):
     """Header di sicurezza + no-store: le risposte contengono testo anonimizzato
@@ -191,8 +195,22 @@ async def _security_headers(request, call_next):
     response.headers["Cache-Control"] = "no-store"
     # CSP: l'API non serve risorse (default-src 'none'); la UI statica può caricare
     # solo risorse same-origin (script/style esterni, niente inline).
-    if request.url.path.startswith("/api"):
+    path = request.url.path
+    if path.startswith("/api"):
         response.headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'"
+    elif path.startswith(_DOCS_PATHS):
+        # Swagger UI (/docs) e ReDoc (/redoc) caricano JS/CSS dalla CDN jsdelivr e usano
+        # uno <script> inline di bootstrap (ReDoc inoltre un web worker da blob:). CSP
+        # allentata SOLO su questi path di documentazione; il resto resta rigido.
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; "
+            "style-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; "
+            "img-src 'self' https://cdn.jsdelivr.net data:; "
+            "font-src 'self' https://cdn.jsdelivr.net; "
+            "worker-src 'self' blob:; "
+            "frame-ancestors 'none'; base-uri 'none'"
+        )
     else:
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
@@ -535,7 +553,10 @@ def guide() -> FileResponse:
 
 @app.get("/favicon.ico", include_in_schema=False)
 def favicon() -> Response:
-    # Evita un 404 rumoroso nei log/console del browser (nessuna icona da servire).
+    icon = _STATIC_DIR / "icon.ico"
+    if icon.is_file():
+        return FileResponse(icon, media_type="image/x-icon")
+    # Evita un 404 rumoroso nei log/console del browser se l'icona manca.
     return Response(status_code=204)
 
 
