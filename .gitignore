@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Test / coverage / type-check
+.pytest_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Ambienti virtuali
+.venv/
+venv/
+env/
+
+# Strumenti locali (non parte del progetto)
+.claude/
+node_modules/
+package.json
+package-lock.json
+
+# OS / editor
+.DS_Store
+*.swp
+
+# Mappe entità e output locali (potenzialmente sensibili — non versionare)
+*.enc
+mappa*.json
+risultato*.json

@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>pProxy — Privacy Proxy per LLM</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <main>
+    <header class="topbar">
+      <h1 class="brand" aria-label="pProxy"><pre class="ascii" aria-hidden="true">██████╗ ██████╗ ██████╗  ██████╗ ██╗  ██╗██╗   ██╗
+██╔══██╗██╔══██╗██╔══██╗██╔═══██╗╚██╗██╔╝╚██╗ ██╔╝
+██████╔╝██████╔╝██████╔╝██║   ██║ ╚███╔╝  ╚████╔╝
+██╔═══╝ ██╔═══╝ ██╔══██╗██║   ██║ ██╔██╗   ╚██╔╝
+██║     ██║     ██║  ██║╚██████╔╝██╔╝ ██╗   ██║
+╚═╝     ╚═╝     ╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═╝   ╚═╝   </pre></h1>
+      <a class="guide-link" href="/guida" target="_blank" rel="noopener">📖 Guida</a>
+    </header>
+    <p class="sub">Anonimizza i dati sensibili prima di darli a un'AI, poi ripristina gli originali nella risposta.
+       La mappa dei dati reali resta sul server (sessione temporanea) o, in modalità zero-knowledge, solo nel tuo browser.</p>
+
+    <label class="apikey">API key <small>(solo se il server la richiede)</small>
+      <input id="apikey" type="password" autocomplete="off" placeholder="X-API-Key" />
+    </label>
+
+    <nav class="tabs" role="tablist">
+      <button class="tab active" data-tab="anon">1 · Anonimizza</button>
+      <button class="tab" data-tab="rehy">2 · Ripristina</button>
+      <button class="tab" data-tab="pipe">Pipeline LLM</button>
+      <button class="tab" data-tab="sess">Sessioni</button>
+    </nav>
+
+    <!-- ============ ANONIMIZZA ============ -->
+    <section id="tab-anon" class="panel active">
+      <p class="hint">Incolla il testo (o carica un file), ottieni la versione con i placeholder
+        <code>[EMAIL_001]</code>… da dare alla tua AS. Poi vai su <b>Ripristina</b>.</p>
+      <label>Testo</label>
+      <textarea id="a-text" rows="6" placeholder="Incolla qui il testo con dati sensibili…"></textarea>
+      <label for="a-file">…oppure carica un file (TXT, JSON, CSV, PDF, DOCX)</label>
+      <input id="a-file" type="file" accept=".txt,.json,.csv,.pdf,.docx" />
+
+      <details class="opts">
+        <summary>Opzioni</summary>
+        <div class="grid">
+          <label>Confidenza <input id="a-conf" type="number" min="0" max="1" step="0.05" value="0.7" /></label>
+          <label>Tipi entità <input id="a-types" type="text" placeholder="es. EMAIL,PHONE,CF (vuoto = tutti)" /></label>
+          <label class="chk"><input id="a-ner" type="checkbox" /> NER avanzato</label>
+          <label class="chk"><input id="a-values" type="checkbox" /> Mostra valori rilevati</label>
+          <label class="chk"><input id="a-zk" type="checkbox" /> Zero-knowledge (mappa nel browser)</label>
+        </div>
+      </details>
+
+      <div class="actions">
+        <button id="a-run">Anonimizza</button>
+        <span class="kbd-hint">← premi qui per avviare (o Ctrl/Cmd+Invio nel testo)</span>
+      </div>
+      <p id="a-status" class="status"></p>
+
+      <div id="a-out" hidden>
+        <div class="outhead"><h3>Testo anonimizzato</h3><button class="ghost small" id="a-copy">Copia</button></div>
+        <pre id="a-result"></pre>
+        <p class="meta"><span id="a-count"></span> · <span id="a-valid"></span></p>
+        <p class="meta">Sessione: <code id="a-sid">—</code></p>
+        <div id="a-entities" hidden><h4>Entità rilevate</h4><pre id="a-entities-pre"></pre></div>
+        <div id="a-mapping" hidden>
+          <div class="outhead"><h4>Mappa (zero-knowledge)</h4><button class="ghost small" id="a-mapcopy">Copia mappa</button></div>
+          <pre id="a-mapping-pre"></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ RIPRISTINA ============ -->
+    <section id="tab-rehy" class="panel">
+      <p class="hint">Incolla qui la <b>risposta della tua AI</b> (quella che contiene i placeholder
+        <code>[EMAIL_001]</code>…). pProxy ricostruisce i dati originali.</p>
+      <label>Risposta dell'AI (con i placeholder)</label>
+      <textarea id="r-text" rows="6" placeholder="Incolla qui l'output dell'AI…"></textarea>
+      <label>ID sessione <small>(compilato in automatico dopo l'anonimizzazione)</small>
+        <input id="r-sid" type="text" placeholder="session_id" />
+      </label>
+      <p class="hint" id="r-zk-note" hidden>Modalità zero-knowledge attiva: verrà usata la mappa salvata nel browser (l'ID sessione è ignorato).</p>
+
+      <div class="actions">
+        <button id="r-run">Ripristina dati originali</button>
+        <span class="kbd-hint">← premi qui per avviare</span>
+      </div>
+      <p id="r-status" class="status"></p>
+
+      <div id="r-out" hidden>
+        <div class="outhead"><h3>Testo ripristinato</h3><button class="ghost small" id="r-copy">Copia</button></div>
+        <pre id="r-result"></pre>
+        <p class="meta"><span id="r-valid"></span></p>
+      </div>
+    </section>
+
+    <!-- ============ PIPELINE LLM ============ -->
+    <section id="tab-pipe" class="panel">
+      <p class="hint">Tutto in un colpo: pProxy anonimizza, chiama l'AI <b>al posto tuo</b> (chiave API lato server)
+        e ti restituisce la risposta già ripristinata. Usa <code>demo</code> per provare senza chiave.</p>
+      <label>Testo</label>
+      <textarea id="p-text" rows="5" placeholder="Incolla qui il testo…"></textarea>
+      <label for="p-file">…oppure carica un file</label>
+      <input id="p-file" type="file" accept=".txt,.json,.csv,.pdf,.docx" />
+
+      <div class="grid">
+        <label>Provider
+          <select id="p-provider">
+            <option value="demo">demo (senza API key)</option>
+            <option value="openai">openai</option>
+            <option value="anthropic">anthropic</option>
+            <option value="gemini">gemini</option>
+            <option value="ollama">ollama</option>
+          </select>
+        </label>
+        <label>Modello <input id="p-model" type="text" placeholder="(default del provider)" /></label>
+      </div>
+      <label>Istruzione (usa <code>{document}</code> come segnaposto del testo)</label>
+      <textarea id="p-prompt" rows="2">Analizza il seguente testo:
+
+{document}</textarea>
+      <label>System prompt (opzionale)</label>
+      <textarea id="p-system" rows="2" placeholder="(opzionale)"></textarea>
+
+      <details class="opts">
+        <summary>Opzioni</summary>
+        <div class="grid">
+          <label>Confidenza <input id="p-conf" type="number" min="0" max="1" step="0.05" value="0.7" /></label>
+          <label>Tipi entità <input id="p-types" type="text" placeholder="vuoto = tutti" /></label>
+          <label>Max chunk <input id="p-chunk" type="number" min="0" step="1000" value="12000" /></label>
+          <label class="chk"><input id="p-ner" type="checkbox" /> NER avanzato</label>
+          <label class="chk"><input id="p-zk" type="checkbox" /> Zero-knowledge</label>
+        </div>
+      </details>
+
+      <div class="actions">
+        <button id="p-run">Esegui pipeline</button>
+        <span class="kbd-hint">← premi qui per avviare</span>
+      </div>
+      <p id="p-status" class="status"></p>
+
+      <div id="p-out" hidden>
+        <h3>Risposta finale (dati ripristinati)</h3>
+        <pre id="p-final"></pre>
+        <details><summary>Dettagli (testo anonimizzato e risposta grezza dell'AI)</summary>
+          <h4>Testo anonimizzato</h4><pre id="p-anon"></pre>
+          <h4>Risposta AI (con placeholder)</h4><pre id="p-raw"></pre>
+        </details>
+        <p class="meta"><span id="p-valid"></span> · Sessione: <code id="p-sid">—</code></p>
+      </div>
+    </section>
+
+    <!-- ============ SESSIONI ============ -->
+    <section id="tab-sess" class="panel">
+      <p class="hint">Controlla o elimina una sessione lato server. L'ID sessione è una credenziale:
+        chi lo possiede può ripristinare i dati, quindi non condividerlo.</p>
+      <label>ID sessione <input id="s-id" type="text" placeholder="session_id" /></label>
+      <div class="actions">
+        <button id="s-status">Stato</button>
+        <button id="s-del" class="ghost">Elimina</button>
+      </div>
+      <p id="s-status-msg" class="status"></p>
+      <pre id="s-out" hidden></pre>
+    </section>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+# Dipendenze della web app (opzionali, non necessarie per CLI/libreria core).
+# Installare con: pip install -r requirements-web.txt
+fastapi>=0.110.0
+uvicorn[standard]>=0.29.0
+httpx>=0.25.0          # usato anche da fastapi.testclient nei test
+python-multipart>=0.0.9  # upload di file (multipart/form-data)

@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>pProxy — Guida all'uso</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <main class="guide">
+    <header class="topbar">
+      <h1>Guida a pProxy</h1>
+      <a class="guide-link" href="/">← Torna all'app</a>
+    </header>
+    <p class="sub">Come anonimizzare i dati sensibili prima di darli a un'AI e ripristinarli nella risposta.</p>
+
+    <h2>A cosa serve</h2>
+    <p>pProxy sostituisce i dati sensibili (email, telefoni, IBAN, codici fiscali, nomi, indirizzi…)
+      con <b>segnaposto</b> tipo <code>[EMAIL_001]</code>. Così puoi mandare il testo a un'AI senza
+      esporre i dati reali; quando l'AI risponde (mantenendo i segnaposto), pProxy ricostruisce gli
+      originali. La <b>mappa</b> segnaposto→valore reale è il dato più delicato: non viene mai inviata
+      all'AI né scritta in chiaro.</p>
+
+    <h2>I due modi di usarlo</h2>
+
+    <h3>A) Flusso manuale — usi la TUA AI (es. ChatGPT, Claude nel browser)</h3>
+    <ol class="steps">
+      <li><b>Anonimizza</b> (scheda 1): incolla il testo → <i>Anonimizza</i>. Ottieni il testo con i
+        segnaposto e un <i>ID sessione</i>. Premi <i>Copia</i>.</li>
+      <li>Incolla quel testo nella tua AI e fatti dare la risposta. <b>Importante:</b> chiedi all'AI di
+        <i>non modificare i segnaposto</i> <code>[…_NNN]</code>.</li>
+      <li><b>Ripristina</b> (scheda 2): incolla la risposta dell'AI → <i>Ripristina dati originali</i>.
+        L'ID sessione è già compilato. Ottieni il testo con i dati reali.</li>
+    </ol>
+    <p class="hint">È il flusso che preserva di più la privacy: i dati reali non lasciano la tua macchina/il
+      server verso l'AI. Con <b>Zero-knowledge</b> la mappa resta solo nel tuo browser (vedi sotto).</p>
+
+    <h3>B) Pipeline automatica — pProxy chiama l'AI al posto tuo</h3>
+    <ol class="steps">
+      <li><b>Pipeline LLM</b> (scheda 3): incolla il testo o carica un file, scegli il <i>provider</i>.</li>
+      <li>Premi <i>Esegui pipeline</i>: pProxy anonimizza, invia all'AI (con la chiave API configurata
+        sul server) e ti restituisce la risposta <b>già ripristinata</b>.</li>
+    </ol>
+    <p class="hint">Usa il provider <code>demo</code> per provare senza chiave API. Per i provider reali
+      (openai, anthropic, gemini, ollama) le chiavi si impostano lato server come variabili d'ambiente.</p>
+
+    <h2>Modalità zero-knowledge</h2>
+    <p>Se attivi <b>Zero-knowledge</b>, il server <b>non conserva nulla</b>: la mappa segnaposto→valore
+      torna al tuo browser e viene usata lì per il ripristino. È l'opzione più riservata; lo svantaggio è
+      che la mappa vive solo nella scheda corrente del browser (se ricarichi la pagina la perdi).</p>
+
+    <h2>Le opzioni</h2>
+    <table>
+      <tr><th>Opzione</th><th>Cosa fa</th></tr>
+      <tr><td>Confidenza</td><td>Soglia 0–1: più alta = meno falsi positivi, ma rischi di non rilevare qualcosa. Default 0.7.</td></tr>
+      <tr><td>Tipi entità</td><td>Limita il rilevamento ad alcuni tipi (es. <code>EMAIL,PHONE,CF</code>). Vuoto = tutti. Accetta anche le forme estese <code>ADDRESS</code>/<code>ORGANIZATION</code>/<code>LOCATION</code>.</td></tr>
+      <tr><td>NER avanzato</td><td>Abilita il riconoscimento di nomi/organizzazioni/luoghi via modelli (se installati sul server). Più lento.</td></tr>
+      <tr><td>Mostra valori rilevati</td><td>Nella scheda Anonimizza, elenca anche i valori originali individuati (utile per verifica).</td></tr>
+      <tr><td>Max chunk</td><td>Pipeline: lunghezza massima dei blocchi per documenti lunghi. <code>0</code> = nessuna suddivisione.</td></tr>
+      <tr><td>Istruzione / System prompt</td><td>Pipeline: il prompt dato all'AI. Usa <code>{document}</code> dove va inserito il testo anonimizzato.</td></tr>
+    </table>
+
+    <h2>Sessioni</h2>
+    <p>Ogni anonimizzazione (non zero-knowledge) crea una <b>sessione temporanea</b> sul server che custodisce
+      la mappa, con scadenza automatica. L'<i>ID sessione</i> è una <b>credenziale</b>: chi lo conosce può
+      ripristinare i dati — non condividerlo. Nella scheda <b>Sessioni</b> puoi verificarne lo stato o
+      eliminarla subito.</p>
+
+    <h2>API key dell'app</h2>
+    <p>Se l'operatore ha protetto il server con una API key, inseriscila nel campo <i>API key</i> in alto:
+      verrà inviata come header <code>X-API-Key</code> con ogni richiesta.</p>
+
+    <h2>Tipi di dato riconosciuti</h2>
+    <p>PERSON, ORG, LOC, ADDR (indirizzo), EMAIL, PHONE, IBAN, CF (codice fiscale), PIVA, CARD (carta),
+      DATE, AMOUNT (importo), CAP, ACCOUNT (conto). I codici con checksum (IBAN, CF, P.IVA, carte) sono
+      validati per ridurre i falsi positivi.</p>
+
+    <h2>Per chi usa l'API direttamente</h2>
+    <p>La documentazione interattiva degli endpoint è su <a href="/docs">/docs</a> (OpenAPI/Swagger).
+      Endpoint principali: <code>POST /api/anonymize</code>, <code>POST /api/rehydrate</code>,
+      <code>POST /api/process</code>, più le varianti <code>*-file</code> per gli upload e
+      <code>GET/DELETE /api/session/{id}</code>.</p>
+
+    <p style="margin-top:2rem"><a class="guide-link" href="/">← Torna all'app</a></p>
+  </main>
+</body>
+</html>
