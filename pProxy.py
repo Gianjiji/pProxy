@@ -68,6 +68,25 @@ class EntityType(str, Enum):
     AMOUNT       = "AMOUNT"
     CAP          = "CAP"
     ACCOUNT      = "ACCOUNT"
+    # ── Identificativi documenti (IT + EN) ──
+    PASSPORT     = "PASSPORT"      # Passaporto / passport
+    ID_CARD      = "ID_CARD"       # Carta d'identità / national ID card
+    DRIVER_LICENSE = "DRIVING_LICENSE"  # Patente / driving licence
+    LICENSE_PLATE  = "PLATE"       # Targa / license plate
+    TAX_ID       = "TAX_ID"        # SSN / NINO / EU VAT / generic national tax id
+    # ── Dati finanziari aggiuntivi ──
+    BIC          = "BIC"           # BIC / SWIFT
+    CVV          = "CVV"           # Card security code
+    CARD_EXPIRY  = "CARD_EXPIRY"   # Scadenza carta
+    # ── Identificativi di rete ──
+    IP_ADDRESS   = "IP"            # IPv4 / IPv6
+    MAC_ADDRESS  = "MAC"           # MAC address
+    URL          = "URL"           # URL / link
+    USERNAME     = "USERNAME"      # @handle / username
+    # ── Identificativi lavorativi e sanitari ──
+    EMPLOYEE_ID  = "EMPLOYEE_ID"   # Matricola / employee id
+    MEDICAL_ID   = "MEDICAL_ID"    # Cartella clinica / patient id
+    INSURANCE_ID = "INSURANCE_ID"  # Assicurazione / policy number
 
 
 @dataclass
@@ -291,19 +310,41 @@ class CSVColumnInferrer:
 
     # Parole chiave nei nomi di colonna → tipo di entità
     _HEADER_MAP: List[Tuple[List[str], EntityType]] = [
-        (["nome", "cognome", "name", "surname", "persona", "intestatario", "titolare"], EntityType.PERSON),
-        (["email", "mail", "e-mail", "posta"], EntityType.EMAIL),
-        (["telefono", "tel", "phone", "cellulare", "mobile", "fax"], EntityType.PHONE),
+        (["nome", "cognome", "name", "surname", "persona", "intestatario", "titolare",
+          "nombre", "apellido", "nom", "prénom", "prenom", "sobrenome", "vorname",
+          "nachname", "kunde"], EntityType.PERSON),
+        (["email", "mail", "e-mail", "posta", "correo", "courriel", "correio"], EntityType.EMAIL),
+        (["telefono", "tel", "phone", "cellulare", "mobile", "fax", "teléfono", "telefono",
+          "téléphone", "telefone", "telefon", "móvil", "movil", "handy", "celular"], EntityType.PHONE),
         (["iban", "conto corrente", "conto", "account"], EntityType.IBAN),
         (["codice fiscale", "cf", "fiscal", "codfis", "codfisc"], EntityType.CF),
         (["partita iva", "p.iva", "piva", "vat"], EntityType.PIVA),
-        (["indirizzo", "address", "via", "street", "residenza", "domicilio"], EntityType.ADDRESS),
-        (["cap", "zip", "postal"], EntityType.CAP),
-        (["data", "date", "nascita", "birth", "nato"], EntityType.DATE),
+        (["indirizzo", "address", "via", "street", "residenza", "domicilio",
+          "dirección", "direccion", "calle", "adresse", "rue", "morada", "rua",
+          "anschrift", "straße", "strasse"], EntityType.ADDRESS),
+        (["cap", "zip", "postal", "código postal", "codigo postal", "code postal",
+          "plz", "postleitzahl"], EntityType.CAP),
+        (["data", "date", "nascita", "birth", "nato", "fecha", "nacimiento",
+          "naissance", "geburt", "geburtsdatum", "nascimento"], EntityType.DATE),
         (["importo", "amount", "totale", "saldo", "stipendio", "reddito", "costo", "prezzo", "euro"], EntityType.AMOUNT),
         (["carta", "card", "cc", "cvv", "credito"], EntityType.CARD),
         (["citta", "città", "city", "comune", "paese", "localita", "località", "location"], EntityType.LOCATION),
         (["organizzazione", "azienda", "societa", "società", "company", "org", "datore"], EntityType.ORGANIZATION),
+        (["passaporto", "passport"], EntityType.PASSPORT),
+        (["carta identita", "carta d'identita", "carta d identita", "documento", "id card", "identity"], EntityType.ID_CARD),
+        (["patente", "driving licence", "driving license", "driver licence", "driver license"], EntityType.DRIVER_LICENSE),
+        (["targa", "license plate", "number plate", "plate"], EntityType.LICENSE_PLATE),
+        (["ssn", "social security", "national insurance", "nino", "tax id", "vat"], EntityType.TAX_ID),
+        (["bic", "swift"], EntityType.BIC),
+        (["cvv", "cvc", "security code"], EntityType.CVV),
+        (["scadenza", "expiry", "exp date", "valid thru"], EntityType.CARD_EXPIRY),
+        (["ip", "indirizzo ip", "ip address"], EntityType.IP_ADDRESS),
+        (["mac", "mac address"], EntityType.MAC_ADDRESS),
+        (["url", "link", "sito", "website"], EntityType.URL),
+        (["username", "user", "utente", "handle", "nickname", "login"], EntityType.USERNAME),
+        (["matricola", "employee id", "badge", "staff id", "emp"], EntityType.EMPLOYEE_ID),
+        (["cartella clinica", "medical record", "patient id", "paziente", "health id"], EntityType.MEDICAL_ID),
+        (["assicurazione", "polizza", "insurance", "policy"], EntityType.INSURANCE_ID),
     ]
 
     @classmethod
@@ -336,15 +377,15 @@ class RuleBasedDetector:
             (r"\b[A-Z]{2}[0-9]{2}[A-Z0-9]{4}[0-9]{7}(?:[A-Z0-9]?){0,16}\b", 0.99),
         ],
         EntityType.CF: [
-            # Codice Fiscale italiano
+            # Codice Fiscale italiano (checksum verificato in detect()).
             (
-                r"\b[A-Z]{6}[0-9]{2}[ABCDEHLMPRST]{1}[0-9]{2}[A-Z]{1}[0-9]{3}[A-Z]{1}\b",
+                r"\b(?-i:[A-Z]{6}[0-9]{2}[ABCDEHLMPRST][0-9]{2}[A-Z][0-9]{3}[A-Z])\b",
                 0.99,
             ),
         ],
         EntityType.PIVA: [
             # Preceduto da etichetta esplicita
-            (r"(?:P\.?\s*IVA|Partita\s+IVA)[\s:]*([0-9]{11})", 0.99),
+            (r"(?:P\.?\s*IVA|Partita\s+IVA)[\s:]*(?P<v>[0-9]{11})", 0.99),
         ],
         EntityType.PHONE: [
             # Numeri italiani con prefisso internazionale
@@ -360,6 +401,10 @@ class RuleBasedDetector:
             ),
             # Numeri internazionali generici (non italiani): +1, +44, +33, ecc.
             (r"(?<!\d)\+(?!39\b|0039)[1-9][0-9]{6,14}(?!\d)", 0.80),
+            # Internazionali con separatori (es. "+34 612 34 56 78", "+33 6 12 34 56 78",
+            # "+49 30 12345678", "+351 912 345 678"): prefisso + 6-13 cifre con separatori.
+            (r"(?<!\d)\+(?!39(?:[\s\-.]|\d))[1-9][0-9]{0,3}[\s\-.]?"
+             r"[0-9](?:[\s\-.]?[0-9]){5,12}(?!\d)", 0.82),
         ],
         EntityType.CAP: [
             (r"\b[0-9]{5}\b", 0.65),
@@ -401,26 +446,57 @@ class RuleBasedDetector:
             # (es. "Stipendio: 2.500,00" / "importo: 35000" / "reddito: 3.500,50")
             (
                 r"(?:stipendio|salario|reddito|importo|totale|saldo|costo|prezzo|"
-                r"fattura|quota|rata|acconto|rimborso|indennit[àa]|compenso)"
-                r"[\s:]*[0-9]{1,3}(?:\.[0-9]{3})*(?:,[0-9]{1,2})?",
+                r"fattura|quota|rata|acconto|rimborso|indennit[àa]|compenso|"
+                r"salary|income|amount|balance|total|invoice|payment|"          # EN
+                r"sueldo|ingreso|importe|precio|factura|"                        # ES
+                r"salaire|revenu|montant|solde|facture|"                        # FR
+                r"sal[áa]rio|rendimento|montante|pre[çc]o|fatura|"              # PT
+                r"gehalt|betrag|summe|rechnung|einkommen)"                       # DE
+                r"[\s:]*(?P<v>[0-9]{1,3}(?:\.[0-9]{3})*(?:,[0-9]{1,2})?)",
                 0.82,
             ),
         ],
         EntityType.CARD: [
-            # Luhn-validated credit card numbers
+            # Luhn-validated credit card numbers (cifre contigue: Visa/MC/Amex/Diners/Discover)
             (r"\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|3[47][0-9]{13}"
              r"|3(?:0[0-5]|[68][0-9])[0-9]{11}|6(?:011|5[0-9]{2})[0-9]{12})\b", 0.95),
+            # Numeri carta con separatori (spazio/trattino): "4111 1111 1111 1111".
+            # Il Luhn (che ignora i non-cifra) filtra i falsi positivi.
+            (r"(?<![0-9])(?:[0-9]{4}[ \-]){3}[0-9]{4}(?![0-9])", 0.90),
+            (r"(?<![0-9])[0-9]{4}[ \-][0-9]{6}[ \-][0-9]{5}(?![0-9])", 0.90),  # Amex 15
+        ],
+        EntityType.BIC: [
+            # BIC/SWIFT preceduto da etichetta
+            (r"(?:BIC|SWIFT|BIC\s*/\s*SWIFT)[\s:]*"
+             r"(?P<v>[A-Z]{6}[A-Z0-9]{2}(?:[A-Z0-9]{3})?)\b", 0.92),
+            # BIC standalone (8 o 11 caratteri, 6 lettere + 2 alfanumerici + opz. 3).
+            # (?-i:) forza il maiuscolo: senza, IGNORECASE matcherebbe parole minuscole.
+            (r"\b(?-i:[A-Z]{6}[A-Z0-9]{2}(?:[A-Z0-9]{3})?)\b", 0.72),
+        ],
+        EntityType.CVV: [
+            (r"(?:CVV2?|CVC2?|CID|security\s+code|codice\s+di\s+sicurezza|"
+             r"c[óo]digo\s+de\s+seguridad|cryptogramme(?:\s+visuel)?|"
+             r"c[óo]digo\s+de\s+seguran[çc]a|pr[üu]fziffer|sicherheitscode)"
+             r"[\s:]*(?P<v>[0-9]{3,4})\b", 0.88),
+        ],
+        EntityType.CARD_EXPIRY: [
+            (r"(?:scadenza|exp(?:iry|ires?)?(?:\s+date)?|valid\s+thru|good\s+thru|"
+             r"vencimiento|caducidad|validit[ée]|expiration|validade|"
+             r"g[üu]ltig\s+bis|ablaufdatum)"
+             r"[\s:]*(?P<v>(?:0[1-9]|1[0-2])\s*/\s*(?:[0-9]{4}|[0-9]{2}))\b", 0.85),
         ],
         EntityType.ACCOUNT: [
             # Conto corrente italiano: preceduto da etichetta esplicita (ABI+CAB+cc = 12 cifre)
             (
                 r"(?:c/c|conto\s+corrente|numero\s+conto|n[°\.]?\s*conto)[\s:]*"
-                r"([0-9]{5}[\s\-]?[0-9]{5}[\s\-]?[0-9]{12}|[0-9]{12})",
+                r"(?P<v>[0-9]{5}[\s\-]?[0-9]{5}[\s\-]?[0-9]{12}|[0-9]{12})",
                 0.95,
             ),
-            # Formato internazionale account preceduto da etichetta
+            # Formato internazionale account preceduto da etichetta (IT/EN/ES/FR/PT/DE)
             (
-                r"(?:account\s+number|account\s+no\.?)[\s:]*([A-Z0-9]{6,20})",
+                r"(?:account\s+(?:number|no\.?)|n[úu]mero\s+de\s+cuenta|"
+                r"num[ée]ro\s+de\s+compte|n[úu]mero\s+de\s+conta|kontonummer)"
+                r"[\s:]*(?P<v>[A-Z0-9]{6,20})",
                 0.90,
             ),
         ],
@@ -436,16 +512,184 @@ class RuleBasedDetector:
                 r"(?:\s*,\s*|\s+)[0-9]+(?:\s*/\s*[A-Z0-9]+)?",
                 0.78,
             ),
+            # ES/FR/PT: prefisso stradale + nome + numero civico (numero dopo)
+            (
+                r"\b(?:Calle|C/|Avenida|Avda\.?|Plaza|Pza\.?|Paseo|Carrer|Camino|"
+                r"Carretera|"                                                   # ES
+                r"Rue|Avenue|Av\.?|Boulevard|Bd\.?|Place|Impasse|All[ée]e|"
+                r"Chemin|Quai|Route|"                                           # FR
+                r"Rua|Pra[çc]a|Travessa|Estrada|Alameda)\s+"                    # PT
+                r"(?:d[aeiou]s?\s+|del\s+|de\s+la\s+|du\s+|des?\s+|do[s]?\s+)??"
+                r"[A-ZÀ-ÖØ-Þa-zà-öø-ÿß][\wà-öø-ÿß]*(?:\s+[A-ZÀ-ÖØ-Þa-zà-öø-ÿß][\wà-öø-ÿß]*){0,3}"
+                r"(?:\s*,\s*|\s+)(?:n[°ºo.]?\s*)?[0-9]+[A-Za-z]?(?:\s*/\s*[A-Z0-9]+)?",
+                0.76,
+            ),
+            # DE: nome via con suffisso (-straße/-weg/-platz...) + numero civico
+            (
+                r"\b(?-i:[A-ZÄÖÜ][a-zäöüß]+(?:\s?[A-ZÄÖÜ][a-zäöüß]+)?"
+                r"(?:stra(?:ße|sse)|str\.|weg|platz|gasse|allee|ring|damm|ufer))"
+                r"\s+[0-9]+[a-z]?\b",
+                0.76,
+            ),
+            # EN/US: numero civico + nome + tipo via (numero prima)
+            (
+                r"\b[0-9]{1,5}\s+[A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+){0,3}\s+"
+                r"(?:Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Lane|Ln|Drive|"
+                r"Dr|Court|Ct|Way|Square|Sq|Place|Pl|Terrace|Ter|Highway|Hwy)\b\.?",
+                0.76,
+            ),
         ],
-        # Nomi di persone preceduti da titolo italiano o professionale
-        # (rule-based ad alta precisione per raggiungere il 95% target del spec)
+        # Nomi di persone preceduti da titolo (IT/EN/ES/FR/PT/DE) o professionale.
         EntityType.PERSON: [
             (
                 r"\b(?:Sig(?:\.ra?)?|Dott(?:\.ssa?)?|Dr|Prof(?:\.ssa?)?|"
-                r"Avv|Ing|Arch|Rag|Geom|On|Sen|Gen|Col)\.?\s+"
-                r"(?-i:[A-ZÀ-Ù][a-zà-ù]+(?:\s+[A-ZÀ-Ù][a-zà-ù]+){0,3})",
+                r"Avv|Ing|Arch|Rag|Geom|On|Sen|Gen|Col|"            # IT
+                r"Mr|Mrs|Ms|Miss|Mx|Sir|Lord|Lady|"                  # EN
+                r"Sr|Sra|Srta|Don|Do[ñn]a|"                          # ES/PT
+                r"Mme|Mlle|"                                         # FR
+                r"Herr|Frau)\.?\s+"                                  # DE
+                r"(?-i:[A-ZÀ-ÖØ-Þ][a-zà-öø-ÿß]+(?:\s+[A-ZÀ-ÖØ-Þ][a-zà-öø-ÿß]+){0,3})",
                 0.88,
             ),
+            # FALLBACK basato sul contesto: nome proprio (Nome Cognome) preceduto
+            # da un'etichetta tipica in 6 lingue. Rete di sicurezza quando il NER
+            # non è disponibile (es. "Cliente: Mario Rossi", "Nom : Jean Dupont").
+            (
+                r"(?:"
+                # IT
+                r"cliente|dipendente|paziente|intestatario|titolare|assicurato|"
+                r"beneficiario|contatto(?:\s+(?:emergenza|di\s+emergenza))?|"
+                r"referente|destinatario|mittente|richiedente|utente|nome|"
+                # EN
+                r"name|full\s+name|customer|employee|patient|client|contact|"
+                r"holder|policyholder|beneficiary|recipient|sender|applicant|"
+                # ES
+                r"nombre|empleado|titular|contacto|asegurado|usuario|remitente|"
+                # FR
+                r"nom(?:\s+complet)?|employ[ée]|titulaire|b[ée]n[ée]ficiaire|"
+                r"destinataire|exp[ée]diteur|utilisateur|assur[ée]|"
+                # PT
+                r"funcion[áa]rio|contato|benefici[áa]rio|destinat[áa]rio|"
+                r"remetente|utilizador|segurado|"
+                # DE
+                r"kunde|mitarbeiter|inhaber|kontakt|empf[äa]nger|absender|"
+                r"benutzer|versicherter|name"
+                r")"
+                r"[ \t]*:?[ \t]*"
+                r"(?P<v>(?-i:[A-ZÀ-ÖØ-Þ][a-zà-öø-ÿß'’]+(?:[ \t]+(?:de[il]?[ \t]+|"
+                r"d[a'][ \t]*|van[ \t]+|von[ \t]+|della?[ \t]+|do[s]?[ \t]+)?"
+                r"[A-ZÀ-ÖØ-Þ][a-zà-öø-ÿß'’]+){1,3}))",
+                0.75,
+            ),
+        ],
+        # ── Documenti d'identità (IT/EN/ES/FR/PT/DE) ──
+        EntityType.PASSPORT: [
+            (r"(?:passaporto|passport|pasaporte|passeport|passaporte|"
+             r"reisepass|pass)(?:\s*(?:n[°ºo.]?|no\.?|nr\.?|num(?:ero|éro)?|number|#))?"
+             r"[\s:]*(?P<v>[A-Z]{1,2}\s?[0-9]{6,8})\b", 0.90),
+        ],
+        EntityType.ID_CARD: [
+            (r"(?:carta\s+d['’i]?\s*identit[àa]|carta\s+identit[àa]|"
+             r"documento\s+d['’i]?\s*identit[àa]|identity\s+card|id\s+card|"
+             r"national\s+id|carte\s+nationale\s+d['’]identit[ée]|cni|"
+             r"cart[ãa]o\s+de\s+cidad[ãa]o|bilhete\s+de\s+identidade|"
+             r"personalausweis|ausweis(?:nummer)?|"
+             r"documento\s+nacional|dni|nie)"
+             r"(?:\s*(?:n[°ºo.]?|no\.?|nr\.?|num(?:ero|éro)?|number|#))?"
+             r"[\s:]*(?P<v>[A-Z]{0,2}\s?[0-9]{6,9}[ \-]?[A-Z]?)\b", 0.88),
+            # DNI spagnolo standalone (8 cifre + lettera di controllo)
+            (r"\b(?-i:[0-9]{8}[ \-]?[A-Z])\b", 0.72),
+            # NIE spagnolo standalone (X/Y/Z + 7 cifre + lettera)
+            (r"\b(?-i:[XYZ][ \-]?[0-9]{7}[ \-]?[A-Z])\b", 0.80),
+        ],
+        EntityType.DRIVER_LICENSE: [
+            (r"(?:patente(?:\s+di\s+guida)?|driver'?s?\s+licen[cs]e|"
+             r"driving\s+licen[cs]e|permiso\s+de\s+conducir|permis\s+de\s+conduire|"
+             r"carta\s+de\s+condu[çc][ãa]o|f[üu]hrerschein)"
+             r"(?:\s*(?:n[°ºo.]?|no\.?|nr\.?|num(?:ero|éro)?|number|#))?"
+             r"[\s:]*(?P<v>[A-Z]{1,2}[0-9]{6,10}[A-Z]?)\b", 0.85),
+        ],
+        EntityType.LICENSE_PLATE: [
+            (r"(?:targa|license\s+plate|number\s+plate|matr[íi]cula|"
+             r"plaque(?:\s+d['’]immatriculation)?|matr[íi]cula|"
+             r"matr[íi]cula|kennzeichen)[\s:]*"
+             r"(?P<v>(?-i:[A-Z]{1,3}[ \-]?[0-9]{1,4}[ \-]?[A-Z]{0,3}[0-9]{0,4}))\b", 0.82),
+        ],
+        # ── Identificativi fiscali (US/UK/ES/FR/PT/DE + EU VAT) ──
+        EntityType.TAX_ID: [
+            # US SSN
+            (r"(?:SSN|social\s+security(?:\s+(?:no|number))?)[\s.:#]*"
+             r"(?P<v>[0-9]{3}-?[0-9]{2}-?[0-9]{4})\b", 0.90),
+            (r"\b[0-9]{3}-[0-9]{2}-[0-9]{4}\b", 0.78),
+            # UK National Insurance Number (case-sensitive: evita match su minuscole)
+            (r"\b(?-i:[A-CEGHJ-PR-TW-Z]{2}\s?[0-9]{2}\s?[0-9]{2}\s?[0-9]{2}\s?[A-D])\b", 0.82),
+            # EU VAT preceduto da etichetta (formato generico paese+cifre)
+            (r"(?:VAT(?:\s+(?:no|number|reg(?:istration)?))?|tax\s+id|"
+             r"steuer-?id|steueridentifikationsnummer|steuernummer|"
+             r"num[ée]ro\s+fiscal|n[íi]f|contribuinte)[\s.:#]*"
+             r"(?P<v>[A-Z]{0,2}[0-9A-Z]{8,13})\b", 0.85),
+            # FR numéro de sécurité sociale / NIR (13 cifre + 2 di controllo)
+            (r"(?:s[ée]curit[ée]\s+sociale|num[ée]ro\s+de\s+s[ée]curit[ée]|nir|"
+             r"n[°º]?\s*s[ée]cu)[\s.:#]*"
+             r"(?P<v>[12][ ]?[0-9]{2}[ ]?[0-9]{2}[ ]?[0-9AB]{2}[ ]?[0-9]{3}"
+             r"[ ]?[0-9]{3}(?:[ ]?[0-9]{2})?)\b", 0.88),
+            # ES número de la seguridad social (NUSS) / FR generico etichettato
+            (r"(?:seguridad\s+social|n[úu]mero\s+de\s+afiliaci[óo]n|nuss|"
+             r"sozialversicherungsnummer|seguran[çc]a\s+social|niss)[\s.:#]*"
+             r"(?P<v>[0-9]{2}[ /\-]?[0-9]{6,12})\b", 0.85),
+            # PT NIF / ES NIF-CIF standalone con etichetta breve già coperti sopra
+        ],
+        # ── Identificativi di rete ──
+        EntityType.IP_ADDRESS: [
+            # IPv4
+            (r"\b(?:(?:25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])\.){3}"
+             r"(?:25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])\b", 0.85),
+            # IPv6 (forma piena o compressa con '::')
+            (r"\b(?:[A-F0-9]{1,4}:){7}[A-F0-9]{1,4}\b", 0.85),
+            (r"(?<![:.\w])(?:[A-F0-9]{1,4}:){1,6}:(?:[A-F0-9]{1,4}:?){0,5}[A-F0-9]{1,4}", 0.80),
+        ],
+        EntityType.MAC_ADDRESS: [
+            # confidence > IPv6 così, in caso di span identico, vince MAC
+            (r"\b(?:[0-9A-F]{2}[:\-]){5}[0-9A-F]{2}\b", 0.92),
+        ],
+        EntityType.URL: [
+            (r"\bhttps?://[^\s<>\"')\]]+", 0.85),
+            (r"\bwww\.[A-Za-z0-9\-]+\.[A-Za-z]{2,24}(?:/[^\s<>\"')\]]*)?", 0.80),
+        ],
+        EntityType.USERNAME: [
+            # @handle (non email): preceduto da inizio/spazio, non da carattere parola
+            (r"(?<![\w@.])@[A-Za-z0-9_]{2,30}\b", 0.62),
+            (r"(?:username|user(?:name)?|handle|nickname|account|login|utente|"
+             r"usuario|utilisateur|identifiant|utilizador|benutzer(?:name)?|nutzername)"
+             r"[\s:]*(?P<v>[A-Za-z0-9._\-]{3,30})\b", 0.70),
+        ],
+        # ── Identificativi lavorativi e sanitari (IT/EN/ES/FR/PT/DE) ──
+        EntityType.EMPLOYEE_ID: [
+            (r"(?:matricola(?:\s+aziendale)?|employee\s+(?:id|number|no\.?)|"
+             r"badge\s+(?:id|number|no\.?)|emp(?:loyee)?\s*id|staff\s+(?:id|number)|"
+             r"n[úu]mero\s+de\s+empleado|matricule|num[ée]ro\s+d['’]employ[ée]|"
+             r"n[úu]mero\s+de\s+funcion[áa]rio|personalnummer|mitarbeiternummer)"
+             r"[\s.:#]*(?P<v>[A-Z]{0,5}[-/]?[0-9]{3,10})\b", 0.85),
+        ],
+        EntityType.MEDICAL_ID: [
+            (r"(?:cartella\s+clinica|medical\s+record(?:\s+(?:no|number))?|"
+             r"patient\s+(?:id|number|no\.?)|id\s+paziente|"
+             r"codice\s+(?:paziente|sanitario)|health\s+id|"
+             r"n[úu]mero\s+de\s+(?:paciente|historia\s+cl[íi]nica)|"
+             r"dossier\s+m[ée]dical|num[ée]ro\s+de\s+patient|"
+             r"n[úu]mero\s+de\s+(?:utente|processo\s+cl[íi]nico)|"
+             r"patientennummer|krankenakte)"
+             r"[\s.:#]*(?P<v>[A-Z]{0,5}[-/]?[0-9]{4,12})\b", 0.85),
+            (r"\bMED[-/]?[0-9]{4,12}\b", 0.78),
+        ],
+        EntityType.INSURANCE_ID: [
+            (r"(?:assicurazione(?:\s+sanitaria)?|polizza|health\s+insurance|"
+             r"insurance(?:\s+(?:no|number|id|policy))?|policy\s+(?:no|number)|"
+             r"p[óo]liza|seguro|num[ée]ro\s+(?:de\s+)?"
+             r"(?:police|d['’]assurance)|police\s+d['’]assurance|ap[óo]lice|"
+             r"versicherungsnummer|versicherung)"
+             r"[\s.:#nº°]*(?P<v>[A-Z]{0,5}[-/]?[0-9]{6,14})\b", 0.85),
+            (r"\bINS[-/]?[0-9]{6,14}\b", 0.78),
         ],
     }
 
@@ -477,7 +721,17 @@ class RuleBasedDetector:
                 if confidence < threshold:
                     continue
                 for m in re.finditer(pattern, text, re.IGNORECASE):
-                    value = m.group(0)
+                    # Se il pattern definisce un gruppo nominato "v", si tokenizza
+                    # SOLO quel sotto-span (il valore sensibile) lasciando intatta
+                    # l'etichetta di contesto (es. "Passaporto: " resta in chiaro,
+                    # viene sostituito solo "YA7654321"). Altrimenti si usa l'intero
+                    # match. Questo evita di cancellare le etichette dal documento.
+                    if "v" in m.groupdict() and m.group("v") is not None:
+                        value = m.group("v")
+                        span_start, span_end = m.span("v")
+                    else:
+                        value = m.group(0)
+                        span_start, span_end = m.start(), m.end()
                     if entity_type == EntityType.CARD and not self._luhn(value):
                         continue
                     if entity_type == EntityType.IBAN and not self._validate_iban(value):
@@ -490,8 +744,8 @@ class RuleBasedDetector:
                         value=value,
                         type=entity_type,
                         confidence=confidence,
-                        start=m.start(),
-                        end=m.end(),
+                        start=span_start,
+                        end=span_end,
                         source="rule",
                     ))
 
@@ -578,6 +832,22 @@ class NERDetector:
         "ORGANIZATION": EntityType.ORGANIZATION,
         "DATE_TIME": EntityType.DATE,
         "IT_FISCAL_CODE": EntityType.CF,
+        # Entità Presidio aggiuntive (US/UK/generiche)
+        "IP_ADDRESS": EntityType.IP_ADDRESS,
+        "URL": EntityType.URL,
+        "US_SSN": EntityType.TAX_ID,
+        "US_ITIN": EntityType.TAX_ID,
+        "US_PASSPORT": EntityType.PASSPORT,
+        "US_DRIVER_LICENSE": EntityType.DRIVER_LICENSE,
+        "US_BANK_NUMBER": EntityType.ACCOUNT,
+        "UK_NHS": EntityType.MEDICAL_ID,
+        "UK_NINO": EntityType.TAX_ID,
+        "MEDICAL_LICENSE": EntityType.MEDICAL_ID,
+        "IT_DRIVER_LICENSE": EntityType.DRIVER_LICENSE,
+        "IT_PASSPORT": EntityType.PASSPORT,
+        "IT_IDENTITY_CARD": EntityType.ID_CARD,
+        "IT_VAT_CODE": EntityType.PIVA,
+        "CRYPTO": EntityType.ACCOUNT,
     }
 
     # GLiNER usa etichette in linguaggio naturale (zero-shot)
@@ -586,6 +856,10 @@ class NERDetector:
         "email", "phone number", "IBAN", "fiscal code",
         "date of birth", "monetary amount",
         "credit card number", "bank account number",
+        "passport number", "identity card number", "driver license number",
+        "license plate", "social security number", "VAT number",
+        "IP address", "MAC address", "URL", "username",
+        "employee id", "medical record number", "insurance policy number",
     ]
     _GLINER_LABEL_MAP = {
         "person": EntityType.PERSON,
@@ -600,12 +874,98 @@ class NERDetector:
         "monetary amount": EntityType.AMOUNT,
         "credit card number": EntityType.CARD,
         "bank account number": EntityType.ACCOUNT,
+        "passport number": EntityType.PASSPORT,
+        "identity card number": EntityType.ID_CARD,
+        "driver license number": EntityType.DRIVER_LICENSE,
+        "license plate": EntityType.LICENSE_PLATE,
+        "social security number": EntityType.TAX_ID,
+        "vat number": EntityType.TAX_ID,
+        "ip address": EntityType.IP_ADDRESS,
+        "mac address": EntityType.MAC_ADDRESS,
+        "url": EntityType.URL,
+        "username": EntityType.USERNAME,
+        "employee id": EntityType.EMPLOYEE_ID,
+        "medical record number": EntityType.MEDICAL_ID,
+        "insurance policy number": EntityType.INSURANCE_ID,
     }
 
+    # Parole-etichetta che i modelli NER a volte scambiano per PERSON/LOC/ORG
+    # (IT + EN). Non sono mai dati personali: vengono scartate in _sanitize.
+    _NER_STOPWORDS = frozenset({
+        "attenzione", "cliente", "dipendente", "paziente", "contatto",
+        "relazione", "scadenza", "note", "documento", "indirizzo", "telefono",
+        "matricola", "assicurazione", "polizza", "passaporto", "patente",
+        "targa", "email", "data", "nascita", "intestatario", "titolare",
+        "beneficiario", "referente", "destinatario", "mittente", "richiedente",
+        "name", "customer", "employee", "patient", "contact", "relationship",
+        "expiry", "note", "notes", "address", "phone", "passport", "license",
+        "insurance", "policy", "holder", "beneficiary", "recipient", "sender",
+        # ES
+        "atención", "atencion", "nombre", "apellido", "empleado", "asegurado",
+        "titular", "contacto", "dirección", "direccion", "teléfono", "telefono",
+        "fecha", "nacimiento", "usuario", "póliza", "poliza", "seguro", "cuenta",
+        # FR
+        "attention", "nom", "prénom", "prenom", "client", "employé", "employe",
+        "assuré", "assure", "adresse", "téléphone", "telephone", "naissance",
+        "contact", "destinataire", "expéditeur", "expediteur", "utilisateur",
+        # PT
+        "atenção", "atencao", "cliente", "funcionário", "funcionario", "morada",
+        "telefone", "nascimento", "segurado", "apólice", "apolice", "utilizador",
+        # DE
+        "achtung", "kunde", "mitarbeiter", "patient", "anschrift", "telefon",
+        "geburtsdatum", "versicherter", "versicherung", "benutzer", "konto",
+        "name", "vorname", "nachname",
+    })
+
+    # Articoli/determinativi (IT/EN/ES/FR/PT/DE) da rifilare in testa/coda agli
+    # span NER di PERSON/ORG/LOCATION (i modelli statistici li agganciano spesso).
+    _ARTICLES = frozenset({
+        "il", "lo", "la", "i", "gli", "le", "l", "un", "uno", "una",       # IT
+        "the", "a", "an",                                                   # EN
+        "el", "los", "las", "unos", "unas",                                 # ES
+        "les", "des", "du", "de",                                           # FR/IT/ES/PT
+        "o", "os", "as", "um", "uma",                                       # PT
+        "der", "die", "das", "den", "dem", "ein", "eine", "einen",         # DE
+    })
+
+    # Tipi NER su cui applicare il trim di articoli iniziali e token minuscoli
+    # (verbi/preposizioni) finali: il "core" del nome è fatto di token Maiuscoli.
+    _TRIMMABLE_TYPES = frozenset({
+        EntityType.PERSON, EntityType.ORGANIZATION, EntityType.LOCATION,
+    })
+
+    # Un gruppo di modelli per lingua (in ordine di preferenza lg→md→sm). Viene
+    # caricato il primo disponibile di ciascun gruppo: così la detection è
+    # multilingue (IT, EN, ES, FR, PT, DE) e degrada con grazia se un modello
+    # non è installato. xx_ent_wiki_sm è un fallback multilingue.
+    _SPACY_MODEL_GROUPS = (
+        ("it_core_news_lg", "it_core_news_md", "it_core_news_sm"),
+        ("en_core_web_lg", "en_core_web_md", "en_core_web_sm"),
+        ("es_core_news_lg", "es_core_news_md", "es_core_news_sm"),
+        ("fr_core_news_lg", "fr_core_news_md", "fr_core_news_sm"),
+        ("pt_core_news_lg", "pt_core_news_md", "pt_core_news_sm"),
+        ("de_core_news_lg", "de_core_news_md", "de_core_news_sm"),
+        ("xx_ent_wiki_sm",),
+    )
+
     def __init__(self) -> None:
-        self._spacy_nlp = None
+        self._spacy_nlp = None        # modello primario (retrocompatibilità)
+        self._spacy_extra = []        # modelli aggiuntivi (altre lingue)
+        self._spacy_models = []       # nomi modelli caricati (per config Presidio)
         self._presidio = None
+        self._presidio_langs = ["en"]
         self._gliner = None
+        # Lazy-loading: i modelli (6 spaCy + Presidio + GLiNER) sono pesanti da
+        # caricare (~30-40s). Si caricano alla prima detect(), così costruire un
+        # NERDetector è istantaneo e, se il NER non viene mai usato, non si paga
+        # nulla. _loaded=False ⇒ "da caricare"; assente (creazione via __new__,
+        # es. nei test) ⇒ "configurato a mano, non caricare".
+        self._loaded = False
+
+    def _ensure_loaded(self) -> None:
+        if getattr(self, "_loaded", None) is not False:
+            return  # già caricato (True) oppure istanza __new__ configurata a mano
+        self._loaded = True
         self._load_spacy()
         self._load_presidio()
         self._load_gliner()
@@ -613,27 +973,67 @@ class NERDetector:
     def _load_spacy(self) -> None:
         try:
             import spacy
-            for model in ("it_core_news_lg", "it_core_news_sm", "xx_ent_wiki_sm", "en_core_web_sm"):
-                try:
-                    self._spacy_nlp = spacy.load(model)
-                    logger.info(f"spaCy: modello '{model}' caricato")
-                    return
-                except OSError:
-                    continue
-            logger.warning(
-                "Nessun modello spaCy trovato. Installare con:\n"
-                "  python -m spacy download it_core_news_sm"
-            )
         except ImportError:
             logger.warning("spaCy non disponibile: pip install spacy")
+            return
+        loaded: List[str] = []
+        for group in self._SPACY_MODEL_GROUPS:
+            for model in group:
+                try:
+                    nlp = spacy.load(model)
+                except (OSError, IOError):
+                    continue
+                if self._spacy_nlp is None:
+                    self._spacy_nlp = nlp
+                else:
+                    self._spacy_extra.append(nlp)
+                loaded.append(model)
+                break  # primo disponibile del gruppo (lingua)
+        self._spacy_models = loaded
+        if loaded:
+            logger.info(f"spaCy: modelli caricati: {', '.join(loaded)}")
+        else:
+            logger.warning(
+                "Nessun modello spaCy trovato. Installare ad es.:\n"
+                "  python -m spacy download it_core_news_sm\n"
+                "  python -m spacy download en_core_web_sm  (es/fr/pt/de analoghi)"
+            )
 
     def _load_presidio(self) -> None:
         try:
             from presidio_analyzer import AnalyzerEngine
-            self._presidio = AnalyzerEngine()
-            logger.info("Presidio analyzer inizializzato")
         except ImportError:
             logger.warning("Presidio non disponibile: pip install presidio-analyzer")
+            return
+        # Costruisce un motore NLP multilingue riusando i modelli spaCy installati
+        # (IT/EN/ES/FR/PT/DE). Senza questa config, AnalyzerEngine supporta solo
+        # l'inglese. Su qualsiasi errore si ricade sul default (en).
+        models_cfg, langs = [], []
+        for name in self._spacy_models:
+            lang = name[:2]
+            if lang == "xx" or lang in langs:
+                continue
+            langs.append(lang)
+            models_cfg.append({"lang_code": lang, "model_name": name})
+        if models_cfg:
+            try:
+                from presidio_analyzer.nlp_engine import NlpEngineProvider
+                engine = NlpEngineProvider(nlp_configuration={
+                    "nlp_engine_name": "spacy", "models": models_cfg,
+                }).create_engine()
+                self._presidio = AnalyzerEngine(
+                    nlp_engine=engine, supported_languages=langs)
+                self._presidio_langs = langs
+                logger.info(f"Presidio multilingue: {', '.join(langs)}")
+                return
+            except Exception as exc:
+                logger.warning(f"Presidio multilingue non configurato ({exc}); default 'en'")
+        try:
+            self._presidio = AnalyzerEngine()
+            self._presidio_langs = ["en"]
+            logger.info("Presidio analyzer inizializzato (en)")
+        except Exception as exc:
+            logger.warning(f"Presidio non inizializzato: {exc}")
 
     def _load_gliner(self) -> None:
         try:
@@ -652,6 +1052,7 @@ class NERDetector:
         threshold: float = 0.7,
         entity_types: Optional[List[EntityType]] = None,
     ) -> List[DetectedEntity]:
+        self._ensure_loaded()
         entities: List[DetectedEntity] = []
 
         if self._spacy_nlp:
@@ -662,6 +1063,11 @@ class NERDetector:
 
         if self._presidio:
             entities.extend(self._presidio_detect(text, threshold))
+
+        # Sanificazione span NER: i modelli statistici a volte estendono lo span
+        # oltre l'a-capo o etichettano le intestazioni di campo (es. "ATTENZIONE:",
+        # "CVV:"). Si tagliano gli a-capo e si scartano le label strutturali.
+        entities = [s for e in entities if (s := self._sanitize(text, e)) is not None]
 
         # Filtro soglia uniforme: spaCy assegna una confidence fissa (0.85) e non
         # filtra internamente come fanno GLiNER e Presidio. Applicarlo qui rende il
@@ -675,20 +1081,90 @@ class NERDetector:
 
         return entities
 
+    @staticmethod
+    def _sanitize(text: str, ent: "DetectedEntity") -> Optional["DetectedEntity"]:
+        """Ripulisce uno span NER. Ritorna None se va scartato.
+
+        - Tronca al primo a-capo (un dato PII non attraversa righe diverse).
+        - Rimuove spazi iniziali/finali ricalcolando gli offset.
+        - Scarta le intestazioni di campo: valore seguito (saltati gli spazi) da
+          ':' (es. "ATTENZIONE:", "IBAN:", "CVV:") — sono label, non valori.
+        - Scarta i token singoli tutto-maiuscolo (acronimi come "BIC"): i nomi
+          propri PII sono normalmente a maiuscola/minuscola mista.
+        """
+        s, e = ent.start, ent.end
+        segment = text[s:e]
+        nl = segment.find("\n")
+        if nl != -1:
+            e = s + nl
+            segment = text[s:e]
+        lead = len(segment) - len(segment.lstrip())
+        trail = len(segment) - len(segment.rstrip())
+        s, e = s + lead, e - trail
+        value = text[s:e]
+        if not value:
+            return None
+        # Label con ':' subito dopo (saltati gli spazi) o ':' incluso nello span.
+        j = e
+        while j < len(text) and text[j] in " \t":
+            j += 1
+        if (j < len(text) and text[j] == ":") or value.endswith(":"):
+            return None
+        # Acronimi tutto-maiuscolo (es. "BIC") e parole-etichetta comuni: rumore NER.
+        if " " not in value and value.isupper() and value.isalpha():
+            return None
+        if value.lower() in NERDetector._NER_STOPWORDS:
+            return None
+        # Trim del rumore spaCy su PERSON/ORG/LOCATION: rimuove in testa gli
+        # articoli/etichette e in coda i token tutto-minuscolo (verbi/preposizioni
+        # agganciati), mantenendo il nucleo Maiuscolo. Es.: "El paciente Antonio
+        # Fernández acudió" → "Antonio Fernández", "la consulta en Sevilla" → "Sevilla".
+        if ent.type in NERDetector._TRIMMABLE_TYPES and " " in value:
+            toks = list(re.finditer(r"\S+", value))
+            lo, hi = 0, len(toks) - 1
+            def _drop(tok: str) -> bool:
+                w = tok.strip(".,;:'’").lower()
+                return tok.islower() or w in NERDetector._ARTICLES or w in NERDetector._NER_STOPWORDS
+            while lo <= hi and _drop(toks[lo].group()):
+                lo += 1
+            while hi >= lo and _drop(toks[hi].group()):
+                hi -= 1
+            if lo > hi:
+                return None
+            new_s = s + toks[lo].start()
+            new_e = s + toks[hi].end()
+            s, e = new_s, new_e
+            value = text[s:e]
+            if not value:
+                return None
+        return DetectedEntity(
+            value=value,
+            type=ent.type,
+            confidence=ent.confidence,
+            start=s,
+            end=e,
+            source=ent.source,
+        )
+
     def _spacy_detect(self, text: str) -> List[DetectedEntity]:
-        doc = self._spacy_nlp(text)
         results = []
-        for ent in doc.ents:
-            etype = self._SPACY_LABEL_MAP.get(ent.label_)
-            if etype:
-                results.append(DetectedEntity(
-                    value=ent.text,
-                    type=etype,
-                    confidence=0.85,
-                    start=ent.start_char,
-                    end=ent.end_char,
-                    source="spacy",
-                ))
+        # Modello primario + eventuali modelli di altre lingue. getattr difende
+        # i test che istanziano NERDetector via __new__ senza _spacy_extra.
+        models = [self._spacy_nlp] + list(getattr(self, "_spacy_extra", []))
+        for nlp in models:
+            if nlp is None:
+                continue
+            for ent in nlp(text).ents:
+                etype = self._SPACY_LABEL_MAP.get(ent.label_)
+                if etype:
+                    results.append(DetectedEntity(
+                        value=ent.text,
+                        type=etype,
+                        confidence=0.85,
+                        start=ent.start_char,
+                        end=ent.end_char,
+                        source="spacy",
+                    ))
         return results
 
     def _gliner_detect(self, text: str, threshold: float) -> List[DetectedEntity]:
@@ -718,7 +1194,7 @@ class NERDetector:
         results = []
         entities_to_check = list(self._PRESIDIO_LABEL_MAP.keys())
         seen: set = set()
-        for lang in ("it", "en"):
+        for lang in getattr(self, "_presidio_langs", ["en"]):
             try:
                 hits = self._presidio.analyze(
                     text=text, language=lang, entities=entities_to_check

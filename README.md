@@ -6,6 +6,12 @@ I dati sensibili vengono sostituiti con placeholder deterministici (`[EMAIL_001]
 
 Disponibile sia come **CLI/libreria** (`pProxy.py`) sia come **web app** con interfaccia a schede e guida integrata (vedi [Web app](#web-app)).
 
+**Novità principali:**
+- **Rilevamento multilingue** — italiano, inglese, spagnolo, francese, portoghese (Portogallo) e tedesco, sia per le regole/etichette sia per i modelli NER.
+- **29 tipi di dato** personali e sensibili (documenti, codici fiscali/IVA, carte + CVV/scadenza, IBAN/BIC, IP/MAC, ID medici/assicurativi/dipendente, ecc.) con validazione a checksum dove possibile.
+- **NER caricato in modo lazy** — i modelli pesanti (spaCy/Presidio/GLiNER) si caricano solo alla prima rilevazione con NER attivo: avvio istantaneo e modalità solo-regex a costo zero.
+- **UI localizzata in 6 lingue** con selettore (IT/EN/ES/FR/PT/DE), auto-rilevamento dal browser e persistenza della scelta.
+
 ---
 
 ## Indice
@@ -53,15 +59,28 @@ pip install python-docx         # File DOCX
 
 ### Dipendenze opzionali per NER avanzato
 
-Tutti i motori NER sono facoltativi: lo script funziona anche con solo regex.
+Tutti i motori NER sono facoltativi: lo script funziona anche con solo regex. Il NER
+riconosce nomi di persona, organizzazioni e luoghi che le regole da sole non coprono, in
+tutte e sei le lingue supportate.
 
 ```bash
 pip install spacy
-python -m spacy download it_core_news_sm   # modello italiano
+# Un modello per lingua (lo script sceglie automaticamente quello disponibile,
+# preferendo le varianti più grandi lg → md → sm, con fallback multilingue xx_ent_wiki_sm):
+python -m spacy download it_core_news_sm   # italiano
+python -m spacy download en_core_web_sm    # inglese
+python -m spacy download es_core_news_sm   # spagnolo
+python -m spacy download fr_core_news_sm   # francese
+python -m spacy download pt_core_news_sm   # portoghese
+python -m spacy download de_core_news_sm   # tedesco
 
 pip install gliner               # NER zero-shot multilingue
-pip install presidio-analyzer    # Microsoft Presidio
+pip install presidio-analyzer    # Microsoft Presidio (NLP multilingue)
 ```
+
+> **Caricamento lazy**: i modelli NER vengono inizializzati solo alla **prima**
+> anonimizzazione con NER attivo (non all'avvio). In modalità solo-regex non vengono mai
+> caricati, quindi avvio e CLI restano istantanei.
 
 ### Dipendenze opzionali per provider LLM
 
@@ -82,22 +101,64 @@ pip install cryptography         # AES-256 per la mappa entità
 
 ## Dati rilevati
 
-| Tipo | Descrizione | Validazione |
-|------|-------------|-------------|
-| `PERSON` | Nomi propri preceduti da titolo (Dott., Sig., Prof., Avv.…) | NER + regex |
+Il rilevamento combina **regole + validazione a checksum** (rilevatore deterministico) e
+**NER statistico/zero-shot** (spaCy + Presidio + GLiNER, opzionali). Etichette di campo e
+pattern coprono **italiano, inglese, spagnolo, francese, portoghese e tedesco**; il codice
+indicato nella prima colonna è quello da usare nel filtro `--entity-types` / opzione *Tipi
+entità*.
+
+### Dati anagrafici e di contatto
+
+| Codice | Descrizione | Rilevamento |
+|--------|-------------|-------------|
+| `PERSON` | Nomi di persona (con o senza titolo: Dott., Sig., Mr, Sr, M., Herr…) | NER + regex |
+| `ORG` | Organizzazioni e aziende | NER |
+| `LOC` | Luoghi e città | NER |
+| `ADDR` | Indirizzi (Via/Corso/Piazza, Street, Calle, Rue, Straße…) | Regex |
 | `EMAIL` | Indirizzi email | Regex |
 | `PHONE` | Numeri italiani (+39, cellulari) e internazionali | Regex |
-| `IBAN` | Codici IBAN | Algoritmo modulo 97 (ISO 13616) |
-| `CF` | Codice Fiscale italiano | Verifica carattere di controllo |
-| `PIVA` | Partita IVA italiana | Verifica checksum 11 cifre |
+| `URL` | URL / siti web | Regex |
+| `USERNAME` | Username / handle (`@nome`) | Regex |
+| `DATE` | Date numeriche e scritte (multilingue) | Regex |
+
+### Documenti e identificativi
+
+| Codice | Descrizione | Rilevamento |
+|--------|-------------|-------------|
+| `CF` | Codice Fiscale italiano | Carattere di controllo |
+| `PIVA` | Partita IVA italiana | Checksum 11 cifre |
+| `TAX_ID` | Altri codici fiscali (DNI/NIF, NIF PT, Steuer-ID, NI…) | Regex |
+| `PASSPORT` | Numeri di passaporto | Regex |
+| `ID_CARD` | Carta d'identità / documento | Regex |
+| `DRIVING_LICENSE` | Patente di guida | Regex |
+| `PLATE` | Targhe veicoli | Regex |
+| `EMPLOYEE_ID` | Matricola / ID dipendente | Regex |
+| `MEDICAL_ID` | Tessera sanitaria / ID medico | Regex |
+| `INSURANCE_ID` | Numero di polizza / assicurazione | Regex |
+
+### Dati bancari e finanziari
+
+| Codice | Descrizione | Rilevamento |
+|--------|-------------|-------------|
+| `IBAN` | Codici IBAN | Modulo 97 (ISO 13616) |
+| `BIC` | Codici BIC/SWIFT | Regex |
 | `CARD` | Numeri carta di credito | Algoritmo di Luhn |
-| `ADDRESS` | Indirizzi italiani (Via, Corso, Piazza…) | Regex |
-| `DATE` | Date numeriche e in italiano scritto | Regex |
-| `AMOUNT` | Importi monetari (€, $, £) e con etichette testuali | Regex |
-| `CAP` | Codici di avviamento postale | Regex |
+| `CVV` | Codici CVV/CVC | Regex |
+| `CARD_EXPIRY` | Scadenza carta (MM/AA) | Regex |
 | `ACCOUNT` | Numeri di conto corrente | Regex |
-| `LOC` | Luoghi e città | NER |
-| `ORG` | Organizzazioni e aziende | NER |
+| `AMOUNT` | Importi monetari (€, $, £…) | Regex |
+| `CAP` | Codici di avviamento postale | Regex |
+
+### Dati tecnici
+
+| Codice | Descrizione | Rilevamento |
+|--------|-------------|-------------|
+| `IP` | Indirizzi IP (v4/v6) | Regex |
+| `MAC` | Indirizzi MAC | Regex |
+
+> I tipi con checksum (IBAN, CF, P.IVA, carte) sono **validati** per ridurre i falsi
+> positivi. Nel filtro tipi entità sono accettate anche le forme estese
+> `ADDRESS` / `ORGANIZATION` / `LOCATION` come alias di `ADDR` / `ORG` / `LOC`.
 
 ---
 
@@ -655,6 +716,12 @@ Poi apri:
 
 In alternativa con Docker: `docker build -t pproxy-web . && docker run --rm -p 8000:8000 pproxy-web`.
 
+> Avvia il server **dalla radice del progetto** (la cartella che contiene `webapp/`). Anche
+> `python webapp/app.py` funziona; in sviluppo resta preferibile `uvicorn … --reload` /
+> `python -m webapp` (`PPROXY_RELOAD=1`) per l'auto-reload. Host/porta: `PPROXY_HOST` /
+> `PPROXY_PORT`. Per gli upload PDF/CSV/DOCX servono le dipendenze opzionali del core
+> ([vedi sopra](#dipendenze-opzionali-per-formati-di-file)); TXT e JSON funzionano senza extra.
+
 ### Interfaccia
 
 L'UI copre i flussi principali:
@@ -666,27 +733,105 @@ L'UI copre i flussi principali:
 Opzioni configurabili da UI: soglia di confidenza, filtro tipi entità, NER, mostra valori,
 max-chunk, modalità zero-knowledge, provider/modello/prompt, e campo API key.
 
+### Lingua dell'interfaccia
+
+L'UI (app + guida) è localizzata in **6 lingue: italiano, inglese, spagnolo, francese,
+portoghese, tedesco**, selezionabili dal menu a tendina in alto a destra. La lingua viene
+**rilevata automaticamente dal browser** al primo accesso e la scelta è **memorizzata**
+(`localStorage`) tra le visite. La traduzione è interamente lato client
+(`webapp/static/i18n.js`): testo statico, placeholder, titolo della pagina e messaggi
+dinamici della UI vengono tradotti senza ricaricare la pagina e senza inviare nulla al server.
+
 ### Endpoint API
 
 | Metodo | Path | Descrizione |
 |--------|------|-------------|
-| `POST` | `/api/anonymize` · `/api/anonymize-file` | Anonimizza testo / file |
-| `POST` | `/api/rehydrate` | Ripristina (via `session_id` o `mapping`) |
-| `POST` | `/api/process` · `/api/process-file` | Pipeline completa anonimizza→LLM→ripristina |
-| `GET`/`DELETE` | `/api/session/{id}` | Stato / eliminazione sessione |
-| `GET` | `/api/health` | Stato del servizio |
+| `GET`  | `/api/health` | Stato del servizio |
+| `POST` | `/api/anonymize` | Anonimizza un testo |
+| `POST` | `/api/anonymize-file` | Anonimizza un file caricato (multipart) |
+| `POST` | `/api/rehydrate` | Ripristina i dati (via `session_id` o `mapping`) |
+| `POST` | `/api/process` | Pipeline completa: anonimizza → LLM → ripristina |
+| `POST` | `/api/process-file` | Pipeline completa su un file caricato (multipart) |
+| `GET`  | `/api/session/{id}` | Stato sessione (solo metadati: conteggio entità, TTL residuo) |
+| `DELETE` | `/api/session/{id}` | Distrugge una sessione |
+
+Documentazione interattiva (OpenAPI/Swagger) su **http://localhost:8000/docs**.
+
+#### Esempi
+
+Anonimizzazione (sessione lato server):
+
+```bash
+curl -s localhost:8000/api/anonymize \
+  -H 'Content-Type: application/json' \
+  -d '{"text": "Scrivi a mario.rossi@example.com", "use_ner": false}'
+# → { "session_id": "...", "anonymized_text": "Scrivi a [EMAIL_001]", ... }
+```
+
+Ripristino con la sessione:
+
+```bash
+curl -s localhost:8000/api/rehydrate \
+  -H 'Content-Type: application/json' \
+  -d '{"text": "[EMAIL_001]", "session_id": "<id>"}'
+```
+
+Zero-knowledge (la mappa torna al client, niente sessione):
+
+```bash
+curl -s localhost:8000/api/anonymize \
+  -H 'Content-Type: application/json' \
+  -d '{"text": "...", "stateless": true}'
+# → { "session_id": null, "mapping": { "[EMAIL_001]": "..." }, ... }
+# poi /api/rehydrate con {"text": "...", "mapping": { ... }}
+```
+
+Upload file: `curl -s -F 'file=@documento.txt' -F 'use_ner=false' localhost:8000/api/anonymize-file`
+
+### Configurazione (variabili d'ambiente)
+
+| Variabile | Default | Significato |
+|-----------|---------|-------------|
+| `PPROXY_SESSION_TTL` | `1800` | TTL sessioni (secondi) |
+| `PPROXY_EVICT_INTERVAL` | `60` | Intervallo del purga-sessioni in background (s) |
+| `PPROXY_RATE_MAX` | `240` | Richieste max per finestra (per IP) |
+| `PPROXY_RATE_WINDOW` | `60` | Ampiezza finestra rate limit (s) |
+| `PPROXY_MAX_TEXT_CHARS` | `100000` | Lunghezza massima del testo |
+| `PPROXY_MAX_UPLOAD_BYTES` | `5000000` | Dimensione massima upload |
+| `PPROXY_MAX_BODY_BYTES` | `10000000` | Dimensione massima del corpo richiesta (413 oltre) |
+| `PPROXY_CORS_ORIGINS` | *(vuoto)* | Origini CORS consentite (CSV) |
+| `PPROXY_API_KEY` | *(vuoto)* | Se impostata, gli endpoint `/api/*` (tranne `/api/health`) richiedono l'header `X-API-Key` |
+| `PPROXY_ALLOWED_PROVIDERS` | *(vuoto = tutti)* | Allowlist provider per la pipeline (CSV, es. `demo,ollama`); gli altri → `403` |
+
+Le API key dei provider LLM si impostano lato server come variabili d'ambiente
+(`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`) e non sono mai esposte al client.
 
 ### Sicurezza & privacy
 
-La mappa placeholder→valore non viene **mai** inviata all'LLM, scritta in chiaro o
-registrata nei log. La web app applica inoltre: rate limiting per IP, limiti su
-testo/upload/corpo richiesta, header di sicurezza + CSP, CORS restrittivo, errori
-sanitizzati, e — opzionali, disattivate di default — **autenticazione via API key**
+La mappa `placeholder → valore` non viene **mai** inviata all'LLM, scritta in chiaro o
+registrata nei log. In modalità **default** resta lato server in una **sessione effimera**
+(TTL, purgata anche in background); in modalità **zero-knowledge** (`stateless: true`) il
+server non conserva nulla e la mappa torna al client.
+
+L'app applica inoltre: rate limiting per IP, limiti su testo/upload/corpo richiesta
+(`Content-Length`), header di sicurezza + CSP, CORS restrittivo, sessioni effimere ed errori
+sanitizzati. Ogni risposta ha un header **`X-Request-ID`** e viene emessa una riga di
+**access log** (`pproxy.webapp.access`) priva di dati sensibili (il path delle sessioni è
+redatto). Opzionali e disattivate di default: **autenticazione via API key**
 (`PPROXY_API_KEY`) e **allowlist provider** (`PPROXY_ALLOWED_PROVIDERS`).
 
-Dettagli completi, esempi di chiamata, configurazione (variabili d'ambiente) e note di
-produzione: vedi **[`webapp/README.md`](webapp/README.md)**. La copertura
-funzionalità→endpoint→UI è tracciata in [`webapp/COVERAGE.md`](webapp/COVERAGE.md).
+Per un'esposizione su Internet si raccomanda:
+
+- **Reverse proxy** (nginx/Caddy/Traefik) per **TLS/HTTPS** e un limite di body *hard* a
+  livello di proxy (es. `client_max_body_size`) che copre anche le richieste *chunked* prive
+  di `Content-Length`.
+- **Autenticazione/autorizzazione** se l'app non deve essere pubblica: senza, chiunque può
+  consumare la quota API del provider configurato lato server. Con `PPROXY_API_KEY` gli
+  endpoint dati richiedono `X-API-Key` (la UI inclusa va allora usata dietro un proxy che
+  inietta la chiave, oppure via chiamate API dirette).
+- **Più worker**: `RateLimiter` e lo store di sessione sono per-processo (in-memory); per
+  deploy multi-worker/multi-istanza usare un backend condiviso (es. Redis) mantenendo le
+  interfacce `allow()` / `SessionStore`.
 
 ---
 

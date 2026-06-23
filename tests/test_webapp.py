@@ -799,7 +799,9 @@ def test_guide_uses_textcontent_safe_static():
 
 def test_favicon_no_404():
     r = client.get("/favicon.ico")
-    assert r.status_code == 204
+    # Il route serve l'icona se presente (200) o risponde 204 se manca: mai 404.
+    assert r.status_code in (200, 204)
+    assert r.status_code != 404
 
 
 def test_static_assets_served():

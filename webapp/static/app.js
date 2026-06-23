@@ -2,6 +2,9 @@
 
 const $ = (id) => document.getElementById(id);
 
+// Localizzazione dei messaggi dinamici (vedi i18n.js). Fallback: testo italiano.
+const tt = (s) => (typeof window.i18nT === "function" ? window.i18nT(s) : s);
+
 // Stato condiviso tra "Anonimizza" e "Ripristina".
 let lastSessionId = null;
 let lastMapping = null;        // valorizzato solo in modalità zero-knowledge
@@ -15,7 +18,7 @@ function authHeaders(extra) {
 }
 async function handle(res) {
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.detail || `Errore ${res.status}`);
+  if (!res.ok) throw new Error(data.detail || `${tt("Errore")} ${res.status}`);
   return data;
 }
 const apiJson = (path, body) =>
@@ -37,9 +40,9 @@ function types(val) {
 async function copyText(text, statusId) {
   try {
     await navigator.clipboard.writeText(text);
-    setStatus(statusId, "Copiato negli appunti.");
+    setStatus(statusId, tt("Copiato negli appunti."));
   } catch (_) {
-    setStatus(statusId, "Copia non riuscita (usa Ctrl/Cmd+C).", true);
+    setStatus(statusId, tt("Copia non riuscita (usa Ctrl/Cmd+C)."), true);
   }
 }
 
@@ -55,7 +58,7 @@ $("a-run").addEventListener("click", async () => {
   const file = $("a-file").files[0];
   const conf = parseFloat($("a-conf").value) || 0.7;
   const zk = $("a-zk").checked;
-  setStatus("a-status", "Elaborazione…");
+  setStatus("a-status", tt("Elaborazione…"));
   try {
     let data;
     if (file) {
@@ -70,7 +73,7 @@ $("a-run").addEventListener("click", async () => {
       data = await apiForm("/api/anonymize-file", fd);
     } else {
       const text = $("a-text").value.trim();
-      if (!text) { setStatus("a-status", "Inserisci del testo o scegli un file.", true); return; }
+      if (!text) { setStatus("a-status", tt("Inserisci del testo o scegli un file."), true); return; }
       data = await apiJson("/api/anonymize", {
         text, confidence: conf, use_ner: $("a-ner").checked,
         include_values: $("a-values").checked, stateless: zk, entity_types: types($("a-types").value),
@@ -80,9 +83,9 @@ $("a-run").addEventListener("click", async () => {
     lastMapping = data.mapping || null;
     $("a-out").hidden = false;
     $("a-result").textContent = data.anonymized_text || "";
-    $("a-count").textContent = (data.entity_count ?? 0) + " entità";
-    $("a-valid").textContent = data.validation?.is_valid ? "validazione ✔" : "validazione ✖";
-    $("a-sid").textContent = lastSessionId || (lastMapping ? "zero-knowledge (mappa nel browser)" : "—");
+    $("a-count").textContent = (data.entity_count ?? 0) + " " + tt("entità");
+    $("a-valid").textContent = data.validation?.is_valid ? tt("validazione ✔") : tt("validazione ✖");
+    $("a-sid").textContent = lastSessionId || (lastMapping ? tt("zero-knowledge (mappa nel browser)") : "—");
     // entità con valori (se richiesto)
     const withVals = (data.entities || []).some((e) => "value" in e);
     $("a-entities").hidden = !withVals;
@@ -93,7 +96,7 @@ $("a-run").addEventListener("click", async () => {
     // prepara la scheda Ripristina
     $("r-sid").value = lastSessionId || "";
     $("r-zk-note").hidden = !lastMapping;
-    setStatus("a-status", "Fatto. Copia il testo, dallo alla tua AI, poi vai su «Ripristina».");
+    setStatus("a-status", tt("Fatto. Copia il testo, dallo alla tua AI, poi vai su «Ripristina»."));
   } catch (e) {
     setStatus("a-status", e.message, true);
   }
@@ -104,22 +107,22 @@ $("a-mapcopy").addEventListener("click", () => copyText($("a-mapping-pre").textC
 // ============ RIPRISTINA ============
 $("r-run").addEventListener("click", async () => {
   const text = $("r-text").value.trim();
-  if (!text) { setStatus("r-status", "Incolla la risposta dell'AI.", true); return; }
-  setStatus("r-status", "Ripristino…");
+  if (!text) { setStatus("r-status", tt("Incolla la risposta dell'AI."), true); return; }
+  setStatus("r-status", tt("Ripristino…"));
   try {
     let body;
     if (lastMapping) {
       body = { text, mapping: lastMapping };          // zero-knowledge
     } else {
       const sid = $("r-sid").value.trim();
-      if (!sid) { setStatus("r-status", "Manca l'ID sessione.", true); return; }
+      if (!sid) { setStatus("r-status", tt("Manca l'ID sessione."), true); return; }
       body = { text, session_id: sid };
     }
     const data = await apiJson("/api/rehydrate", body);
     $("r-out").hidden = false;
     $("r-result").textContent = data.rehydrated_text || "";
-    $("r-valid").textContent = data.validation?.is_valid ? "validazione ✔" : "validazione ✖ (controlla i placeholder)";
-    setStatus("r-status", "Fatto.");
+    $("r-valid").textContent = data.validation?.is_valid ? tt("validazione ✔") : tt("validazione ✖ (controlla i placeholder)");
+    setStatus("r-status", tt("Fatto."));
   } catch (e) {
     setStatus("r-status", e.message, true);
   }
@@ -130,7 +133,7 @@ $("r-copy").addEventListener("click", () => copyText($("r-result").textContent, 
 $("p-run").addEventListener("click", async () => {
   const file = $("p-file").files[0];
   const conf = parseFloat($("p-conf").value) || 0.7;
-  setStatus("p-status", "Elaborazione (può richiedere qualche secondo)…");
+  setStatus("p-status", tt("Elaborazione (può richiedere qualche secondo)…"));
   try {
     let data;
     if (file) {
@@ -149,7 +152,7 @@ $("p-run").addEventListener("click", async () => {
       data = await apiForm("/api/process-file", fd);
     } else {
       const text = $("p-text").value.trim();
-      if (!text) { setStatus("p-status", "Inserisci del testo o scegli un file.", true); return; }
+      if (!text) { setStatus("p-status", tt("Inserisci del testo o scegli un file."), true); return; }
       data = await apiJson("/api/process", {
         text, provider: $("p-provider").value, model: $("p-model").value.trim() || null,
         prompt: $("p-prompt").value, system_prompt: $("p-system").value || null,
@@ -160,26 +163,26 @@ $("p-run").addEventListener("click", async () => {
     $("p-out").hidden = false;
     $("p-final").textContent = data.final_response || "";
     $("p-anon").textContent = data.anonymized_text || "";
-    $("p-raw").textContent = data.llm_response_anonymized || "(non disponibile)";
-    $("p-valid").textContent = data.validation?.anonymization?.is_valid ? "validazione ✔" : "validazione ✖";
-    $("p-sid").textContent = data.session_id || "zero-knowledge / nessuna";
-    setStatus("p-status", "Fatto.");
+    $("p-raw").textContent = data.llm_response_anonymized || tt("(non disponibile)");
+    $("p-valid").textContent = data.validation?.anonymization?.is_valid ? tt("validazione ✔") : tt("validazione ✖");
+    $("p-sid").textContent = data.session_id || tt("zero-knowledge / nessuna");
+    setStatus("p-status", tt("Fatto."));
   } catch (e) {
     setStatus("p-status", e.message, true);
   }
 });
 $("p-provider").addEventListener("change", () => {
-  $("p-model").placeholder = $("p-provider").value === "demo" ? "(ignorato dal demo)" : "(default del provider)";
+  $("p-model").placeholder = $("p-provider").value === "demo" ? tt("(ignorato dal demo)") : tt("(default del provider)");
 });
 
 // ============ SESSIONI ============
 $("s-status").addEventListener("click", async () => {
   const id = $("s-id").value.trim();
-  if (!id) { setStatus("s-status-msg", "Inserisci un ID sessione.", true); return; }
+  if (!id) { setStatus("s-status-msg", tt("Inserisci un ID sessione."), true); return; }
   try {
     const data = await apiGet(`/api/session/${encodeURIComponent(id)}`);
     $("s-out").hidden = false;
-    $("s-out").textContent = `attiva: ${data.active}\nentità: ${data.entity_count}\nscade tra: ${data.expires_in}s`;
+    $("s-out").textContent = `${tt("attiva:")} ${data.active}\n${tt("entità:")} ${data.entity_count}\n${tt("scade tra:")} ${data.expires_in}s`;
     setStatus("s-status-msg", "");
   } catch (e) {
     $("s-out").hidden = true;
@@ -188,11 +191,11 @@ $("s-status").addEventListener("click", async () => {
 });
 $("s-del").addEventListener("click", async () => {
   const id = $("s-id").value.trim();
-  if (!id) { setStatus("s-status-msg", "Inserisci un ID sessione.", true); return; }
+  if (!id) { setStatus("s-status-msg", tt("Inserisci un ID sessione."), true); return; }
   try {
     await apiDelete(`/api/session/${encodeURIComponent(id)}`);
     $("s-out").hidden = true;
-    setStatus("s-status-msg", "Sessione eliminata.");
+    setStatus("s-status-msg", tt("Sessione eliminata."));
   } catch (e) {
     setStatus("s-status-msg", e.message, true);
   }
