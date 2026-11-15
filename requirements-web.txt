@@ -1,0 +1,9 @@
+# Privacy Proxy per LLM - Dipendenze della web app
+# Installare con: pip install -r requirements-web.txt
+# (per eseguire anche i test: pip install -r requirements.txt -r requirements-web.txt)
+#
+# Non servono per la CLI né per l'uso come libreria: il core resta senza dipendenze.
+fastapi>=0.110.0
+uvicorn[standard]>=0.29.0
+python-multipart>=0.0.9     # upload di file (multipart/form-data)
+httpx>=0.25.0               # richiesto da fastapi.testclient (test della web app)

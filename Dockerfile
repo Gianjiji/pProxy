@@ -13,8 +13,8 @@ WORKDIR /app
 COPY requirements-web.txt ./
 RUN pip install --no-cache-dir -r requirements-web.txt
 
-# Codice: motore + alias + package web (i test e i prompt non servono in immagine)
-COPY pProxy.py privacy_proxy.py ./
+# Codice: motore + package web (i test e i prompt non servono in immagine)
+COPY pProxy.py ./
 COPY webapp ./webapp
 
 # Esecuzione come utente non privilegiato

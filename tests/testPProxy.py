@@ -419,7 +419,12 @@ class TestSecureMappingStore:
         assert store2.get_mapping()["[IBAN_001]"] == "IT60X0542811101000000123456"
 
     def test_encrypted_uses_random_salt(self, tmp_path):
-        """Ogni salvataggio cifrato usa un salt casuale (formato v2) → ciphertext diverso."""
+        """Ogni file cifrato ha un salt casuale proprio (formato v2).
+
+        Il salt è per file, non per salvataggio: ri-salvare lo stesso file lo riusa
+        (così la derivazione PBKDF2 si paga una volta sola), ma il ciphertext cambia
+        comunque perché ogni cifratura Fernet ha un IV casuale.
+        """
         try:
             from cryptography.fernet import Fernet  # noqa: F401
         except ImportError:
@@ -429,9 +434,16 @@ class TestSecureMappingStore:
         store.store({"[EMAIL_001]": "a@b.com"})
         raw1 = Path(path).read_bytes()
         assert raw1.startswith(b"PPX2")          # header formato v2
-        store.store({})                          # ri-salva con nuovo salt
+        store.store({})                          # ri-salva lo stesso file
         raw2 = Path(path).read_bytes()
-        assert raw1[:20] != raw2[:20]            # salt diverso ad ogni save
+        assert raw1[:20] == raw2[:20]            # stesso file → stesso salt
+        assert raw1[20:] != raw2[20:]            # ma ciphertext diverso (IV casuale)
+
+        other = str(tmp_path / "altra.enc")
+        SecureMappingStore(store_path=other, encryption_key="pw").store(
+            {"[EMAIL_001]": "a@b.com"}
+        )
+        assert Path(other).read_bytes()[:20] != raw1[:20]   # file diverso → salt diverso
 
     def test_wrong_passphrase_rejected(self, tmp_path):
         """Una passphrase errata non deve decifrare la mappa."""
@@ -548,9 +560,14 @@ class TestRehydrationEngine:
         engine = RehydrationEngine()
         text = "[TOK_00001] " * 5000
         mapping = {f"[TOK_{i:05d}]": "X" * 10 for i in range(20000)}
-        t = time.time()
-        engine.rehydrate(text, mapping)
-        assert time.time() - t < 1.0  # ciclo per-token precedente: ~0.8s e oltre
+        t = time.perf_counter()
+        result = engine.rehydrate(text, mapping)
+        elapsed = time.perf_counter() - t
+        assert result == ("X" * 10 + " ") * 5000
+        # Regex generica + dizionario: pochi millisecondi. Il limite resta largo
+        # (macchine lente, coverage attiva) ma ben sotto l'alternanza da 20.000
+        # rami (oltre 1 s) e il ciclo per-token ancora precedente.
+        assert elapsed < 1.0
 
     def test_find_unreplaced_four_digit_token(self):
         """Token con indice a 4 cifre (>999 entità) deve essere rilevato come non sostituito."""
@@ -883,7 +900,7 @@ class TestOllamaProvider:
     """Provider Ollama testato mockando requests.post (nessun server reale)."""
 
     def test_ollama_send_builds_request_and_parses_response(self, monkeypatch):
-        import requests
+        requests = pytest.importorskip("requests")
 
         captured = {}
 
@@ -914,7 +931,7 @@ class TestOllamaProvider:
         assert captured["json"]["system"] == "sei un assistente"
 
     def test_ollama_connection_error_wrapped_as_runtimeerror(self, monkeypatch):
-        import requests
+        requests = pytest.importorskip("requests")
 
         def _boom(*a, **k):
             raise requests.exceptions.ConnectionError("connection refused")
