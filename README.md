@@ -94,7 +94,7 @@ pip install requests             # Ollama (locale)
 ### Cifratura mappa (opzionale)
 
 ```bash
-pip install cryptography         # AES-256 per la mappa entità
+pip install cryptography         # cifratura della mappa entità
 ```
 
 ---
@@ -491,7 +491,12 @@ python pProxy.py \
 
 ## Cifratura della mappa
 
-La mappa `placeholder → originale` può essere cifrata con **AES-256** tramite una passphrase. Il file risultante è illeggibile senza la chiave.
+La mappa `placeholder → originale` può essere cifrata tramite una passphrase. Il file risultante è illeggibile senza la chiave.
+
+- **Algoritmo**: Fernet (libreria `cryptography`), cioè **AES-128-CBC + HMAC-SHA256**. È cifratura *autenticata*: un file manomesso viene rifiutato in lettura.
+- **Chiave**: derivata dalla passphrase con PBKDF2-HMAC-SHA256, 480.000 iterazioni e un salt casuale per file.
+- **Nessun ripiego in chiaro**: se si passa `--encryption-key` ma `cryptography` non è installato, il comando si ferma con un errore. La mappa non viene mai scritta in chiaro al posto di quella cifrata.
+- **File privato**: la mappa, cifrata o no, è creata con permessi `0600` (solo il proprietario) e scritta in modo atomico, così un'interruzione non lascia un file troncato.
 
 ### Anonimizza con mappa cifrata
 
@@ -666,7 +671,7 @@ MODALITÀ:
 SICUREZZA:
   --save-mapping FILE      Salva la mappa entità
   --load-mapping FILE      Carica una mappa salvata
-  --encryption-key PASS    Cifra/decifra la mappa con AES-256
+  --encryption-key PASS    Cifra/decifra la mappa (Fernet)
   --no-stop-on-error       Non bloccare su errori di validazione (sconsigliato)
 
 OUTPUT:
@@ -825,6 +830,10 @@ Per un'esposizione su Internet si raccomanda:
 - **Reverse proxy** (nginx/Caddy/Traefik) per **TLS/HTTPS** e un limite di body *hard* a
   livello di proxy (es. `client_max_body_size`) che copre anche le richieste *chunked* prive
   di `Content-Length`.
+- **Indirizzo reale del client**: dietro un reverse proxy l'app vede come mittente il
+  proxy stesso, quindi il rate limit *per IP* diventa un unico tetto condiviso da tutti.
+  Avviare uvicorn con `--proxy-headers --forwarded-allow-ips=<IP del proxy>` perché usi
+  `X-Forwarded-For` (solo dal proxy fidato: da altri mittenti l'header resta ignorato).
 - **Autenticazione/autorizzazione** se l'app non deve essere pubblica: senza, chiunque può
   consumare la quota API del provider configurato lato server. Con `PPROXY_API_KEY` gli
   endpoint dati richiedono `X-API-Key` (la UI inclusa va allora usata dietro un proxy che
@@ -880,7 +889,7 @@ Documento
 [Modulo 3] Tokenization Engine  Sostituzione deterministica → testo anonimizzato
     │
     ▼
-[Modulo 4] Secure Mapping Store Mappa locale (AES-256 opzionale) — mai inviata all'LLM
+[Modulo 4] Secure Mapping Store Mappa locale (cifratura opzionale) — mai inviata all'LLM
     │
     ▼
 [Modulo 5] LLM Gateway          OpenAI / Anthropic / Gemini / Ollama / Demo

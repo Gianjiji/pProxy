@@ -7,7 +7,7 @@ Architettura (da specifica):
   Modulo 1 - Input Layer          (PDF, CSV, TXT, DOCX, JSON → testo + inferenza colonne CSV)
   Modulo 2 - Detection Engine     (regex + NER ibrido: spaCy, GLiNER, Presidio)
   Modulo 3 - Tokenization Engine  (sostituzione deterministica con placeholder)
-  Modulo 4 - Secure Mapping Store (mappa locale, AES-256 opzionale)
+  Modulo 4 - Secure Mapping Store (mappa locale, cifratura opzionale)
   Modulo 5 - LLM Gateway          (OpenAI, Anthropic, Gemini, Ollama, Demo)
   Modulo 6 - Rehydration Engine   (ripristino dati originali nella risposta)
   Modulo 7 - Validation Layer     (verifica token non sostituiti / inventati)
@@ -1336,6 +1336,10 @@ class TokenizationEngine:
         return "".join(result), entity_map
 
     def _get_token(self, value: str, etype: EntityType) -> str:
+        # Chiave senza distinzione di maiuscole: "Mario Rossi" e "MARIO ROSSI" sono la
+        # stessa entità e devono arrivare all'LLM con lo stesso placeholder, altrimenti
+        # verrebbero trattati come due soggetti diversi. Conseguenza voluta: al
+        # ripristino tutte le occorrenze tornano nella grafia della prima nel testo.
         key = value.strip().lower()
         if key in self._value_to_token:
             return self._value_to_token[key]
@@ -1350,17 +1354,60 @@ class TokenizationEngine:
 # MODULO 4 – SECURE MAPPING STORE
 # ──────────────────────────────────────────────────────────────
 
+class EncryptionUnavailableError(RuntimeError):
+    """Cifratura richiesta ma impossibile da garantire (manca ``cryptography``)."""
+
+
+def _write_private_atomic(path: Path, data: bytes) -> None:
+    """Scrive ``data`` in ``path`` in modo atomico e con permessi 0600.
+
+    La mappa contiene i dati sensibili originali: il file non deve mai essere
+    leggibile da altri utenti della macchina, né restare troncato se il processo
+    viene interrotto a metà scrittura. Si scrive quindi su un file temporaneo nella
+    stessa cartella (``mkstemp`` lo crea già 0600), si forza il flush su disco e lo
+    si rinomina sul file definitivo: la rinomina è atomica, quindi chi legge vede
+    sempre o la versione vecchia intera o quella nuova intera.
+    """
+    import tempfile
+
+    fd, tmp_name = tempfile.mkstemp(
+        dir=str(path.parent), prefix=path.name + ".", suffix=".tmp"
+    )
+    try:
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(data)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp_name, path)
+    except BaseException:
+        try:
+            os.unlink(tmp_name)
+        except OSError:
+            pass
+        raise
+
+
 class SecureMappingStore:
     """
     Mappa locale placeholder → originale.
     Non viene mai inviata all'LLM.
-    Supporta cifratura AES-256 (tramite cryptography/Fernet).
+
+    Cifratura opzionale con passphrase tramite cryptography/Fernet, cioè
+    AES-128-CBC + HMAC-SHA256 (cifratura autenticata: una manomissione del file
+    viene rilevata in lettura). Se la cifratura è richiesta ma ``cryptography``
+    non è installato si solleva ``EncryptionUnavailableError``: la mappa non
+    viene MAI salvata in chiaro al posto di quella cifrata.
 
     Derivazione chiave: PBKDF2-HMAC-SHA256, 480.000 iterazioni.
     Ogni file cifrato incorpora un salt casuale di 16 byte (formato v2), così che
     la stessa passphrase produca chiavi diverse su file diversi, neutralizzando
-    attacchi con tabelle precalcolate. I file legacy (salt statico) restano
-    leggibili per retrocompatibilità.
+    attacchi con tabelle precalcolate. Il salt è uno per file: i salvataggi
+    successivi dello stesso file lo riusano (ogni cifratura Fernet ha comunque un
+    IV casuale proprio), così la derivazione, volutamente lenta, si paga una
+    volta sola e non a ogni ``store()``. I file legacy (salt statico) restano
+    leggibili per retrocompatibilità e passano al formato v2 al primo salvataggio.
+
+    Il file, cifrato o no, è scritto in modo atomico e con permessi 0600.
     """
 
     _KDF_ITERATIONS = 480_000
@@ -1376,26 +1423,44 @@ class SecureMappingStore:
         self._path = Path(store_path) if store_path else None
         self._mapping: Dict[str, str] = {}
         self._passphrase: Optional[str] = None
-        # ``_fernet`` resta esposto (None se cifratura non attiva) per
-        # retrocompatibilità con codice/test che ne verificano la presenza.
-        self._fernet = None
+        self._salt: Optional[bytes] = None        # salt del file corrente
+        self._fernets: Dict[bytes, Any] = {}      # salt → Fernet già derivato
         if encryption_key:
             self._init_crypto(encryption_key)
 
     def _init_crypto(self, passphrase: str) -> None:
-        self._passphrase = passphrase
         try:
-            # La derivazione importa cryptography: se manca, ImportError → fallback
-            # in chiaro. Il Fernet "rappresentativo" (salt statico) serve solo a
-            # segnalare che la cifratura è abilitata; la chiave reale di save/load
-            # è derivata per-file con salt casuale.
-            self._fernet = self._derive_fernet(self._LEGACY_SALT)
-        except ImportError:
-            self._passphrase = None
-            self._fernet = None
-            logger.warning("cryptography non installato – mappa salvata in chiaro")
-            return
-        logger.info("Cifratura AES-256 abilitata")
+            import cryptography.fernet  # noqa: F401
+        except ImportError as exc:
+            raise EncryptionUnavailableError(
+                "Cifratura della mappa richiesta, ma il pacchetto 'cryptography' non è "
+                "installato: la mappa non viene salvata in chiaro. "
+                "Installa con: pip install cryptography"
+            ) from exc
+        self._passphrase = passphrase
+        logger.info("Cifratura della mappa abilitata (Fernet: AES-128-CBC + HMAC-SHA256)")
+
+    @property
+    def _fernet(self):
+        """Fernet del file corrente; ``None`` se la cifratura non è attiva.
+
+        Esposto per retrocompatibilità con codice/test che ne verificano la presenza.
+        """
+        if self._passphrase is None:
+            return None
+        return self._fernet_for(self._current_salt())
+
+    def _current_salt(self) -> bytes:
+        if self._salt is None:
+            self._salt = os.urandom(self._SALT_LEN)
+        return self._salt
+
+    def _fernet_for(self, salt: bytes):
+        """Fernet per ``salt``, derivato una sola volta per istanza."""
+        fernet = self._fernets.get(salt)
+        if fernet is None:
+            fernet = self._fernets[salt] = self._derive_fernet(salt)
+        return fernet
 
     def _derive_fernet(self, salt: bytes):
         from cryptography.fernet import Fernet
@@ -1424,35 +1489,41 @@ class SecureMappingStore:
         self._mapping.clear()
 
     def _save(self) -> None:
-        raw = json.dumps(self._mapping, ensure_ascii=False).encode()
         if self._passphrase is not None:
-            import os as _os
-            salt = _os.urandom(self._SALT_LEN)
-            token = self._derive_fernet(salt).encrypt(raw)
-            self._path.write_bytes(self._MAGIC + salt + token)
+            raw = json.dumps(self._mapping, ensure_ascii=False).encode()
+            salt = self._current_salt()
+            payload = self._MAGIC + salt + self._fernet_for(salt).encrypt(raw)
         else:
-            self._path.write_text(
-                json.dumps(self._mapping, ensure_ascii=False, indent=2), encoding="utf-8"
-            )
+            payload = json.dumps(
+                self._mapping, ensure_ascii=False, indent=2
+            ).encode("utf-8")
+        _write_private_atomic(self._path, payload)
         logger.info(f"Mappa salvata in {self._path}")
 
     def load(self) -> None:
         if not self._path or not self._path.exists():
             return
+        data = self._path.read_bytes()
         if self._passphrase is not None:
-            data = self._path.read_bytes()
             if data.startswith(self._MAGIC):
                 salt = data[len(self._MAGIC):len(self._MAGIC) + self._SALT_LEN]
                 token = data[len(self._MAGIC) + self._SALT_LEN:]
-                fernet = self._derive_fernet(salt)
+                raw = self._fernet_for(salt).decrypt(token)
+                # Solo dopo una decifratura riuscita: i salvataggi successivi
+                # riusano salt e chiave del file, senza una nuova derivazione.
+                self._salt = salt
             else:
-                # File legacy v1: salt statico, token Fernet "nudo".
-                fernet = self._derive_fernet(self._LEGACY_SALT)
-                token = data
-            raw = fernet.decrypt(token)
+                # File legacy v1: salt statico, token Fernet "nudo". Il salt statico
+                # non viene adottato: il prossimo salvataggio scrive il formato v2.
+                raw = self._fernet_for(self._LEGACY_SALT).decrypt(data)
             self._mapping = json.loads(raw.decode())
         else:
-            self._mapping = json.loads(self._path.read_text(encoding="utf-8"))
+            if data.startswith(self._MAGIC):
+                raise ValueError(
+                    f"La mappa '{self._path}' è cifrata: serve la passphrase "
+                    "(--encryption-key)."
+                )
+            self._mapping = json.loads(data.decode("utf-8"))
 
 
 # ──────────────────────────────────────────────────────────────
@@ -1700,9 +1771,10 @@ class RehydrationEngine:
         Il matching è case-insensitive per gestire LLM che alterano le maiuscole
         nei placeholder (es. [person_001] invece di [PERSON_001]).
 
-        Implementazione a passata singola: una sola regex di alternanza di tutti i
-        token, con i token ordinati dal più lungo al più corto così che, in caso di
-        prefissi comuni, vinca il match più lungo. La funzione di replacement
+        Implementazione a passata singola: una sola regex (quella generica dei
+        token, oppure un'alternanza dal più lungo al più corto se la mappa ha chiavi
+        di forma libera) così che, in caso di prefissi comuni, vinca il match più
+        lungo. La funzione di replacement
         restituisce il valore originale LETTERALE (immune dall'interpretazione di
         sequenze come \\1 o \\g<name>, es. backslash nei percorsi Windows).
         Vantaggi rispetto a un ciclo di re.sub per-token:
@@ -1712,9 +1784,21 @@ class RehydrationEngine:
         """
         if not entity_map:
             return text
-        tokens = sorted(entity_map.keys(), key=len, reverse=True)
-        pattern = re.compile("|".join(re.escape(t) for t in tokens), re.IGNORECASE)
         lookup = {k.upper(): v for k, v in entity_map.items()}
+        if all(self._TOKEN_RE.fullmatch(k) for k in entity_map):
+            # Caso normale: tutte le chiavi hanno la forma [TIPO_NNN]. Basta la regex
+            # generica dei token più una ricerca nel dizionario: il costo non dipende
+            # più dal numero di voci della mappa. (Un'alternanza con migliaia di
+            # token va compilata a ogni chiamata e provata ramo per ramo a ogni
+            # posizione: con 20.000 voci costava oltre un secondo.) Le parentesi
+            # quadre delimitano il token, quindi [ORG_0011] non può essere scambiato
+            # per [ORG_001] seguito da "1".
+            pattern = self._TOKEN_RE
+        else:
+            # Mappa con chiavi di forma libera (fornita dall'esterno): alternanza
+            # esplicita, dal token più lungo al più corto.
+            tokens = sorted(entity_map.keys(), key=len, reverse=True)
+            pattern = re.compile("|".join(re.escape(t) for t in tokens), re.IGNORECASE)
         return pattern.sub(
             lambda m: lookup.get(m.group(0).upper(), m.group(0)), text
         )
@@ -2023,7 +2107,7 @@ Esempi:
 
     # ── Security ──────────────────────────────────────────
     p.add_argument("--encryption-key", metavar="PASSPHRASE",
-                   help="Cifra la mappa con AES-256 usando questa passphrase")
+                   help="Cifra la mappa (Fernet: AES-128-CBC + HMAC-SHA256) con questa passphrase")
     p.add_argument("--save-mapping", metavar="FILE",
                    help="Salva la mappa delle entità in questo file")
     p.add_argument("--load-mapping", metavar="FILE",
@@ -2196,6 +2280,15 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(f"✖ {exc}", file=sys.stderr)
         return 1
 
+    # La cifratura o c'è o il comando si ferma: mai una mappa in chiaro al posto
+    # di quella cifrata che l'utente ha chiesto.
+    if args.encryption_key:
+        try:
+            SecureMappingStore(encryption_key=args.encryption_key)
+        except EncryptionUnavailableError as exc:
+            print(f"✖ {exc}", file=sys.stderr)
+            return 1
+
     # ── Modalità ripristino standalone (--rehydrate-from + --load-mapping) ──
     if hasattr(args, "rehydrate_from") and args.rehydrate_from:
         if not args.load_mapping:
@@ -2205,7 +2298,17 @@ def main(argv: Optional[List[str]] = None) -> int:
             store_path=args.load_mapping,
             encryption_key=args.encryption_key,
         )
-        store.load()
+        try:
+            store.load()
+        except Exception as exc:
+            # Passphrase errata, file manomesso, file cifrato letto senza passphrase,
+            # JSON non valido: in tutti i casi la mappa non è utilizzabile.
+            reason = str(exc) or (
+                "passphrase errata oppure file della mappa corrotto o manomesso"
+                if args.encryption_key else "file della mappa non valido"
+            )
+            print(f"✖ Impossibile leggere la mappa: {reason}", file=sys.stderr)
+            return 1
         mapping = store.get_mapping()
         # Il sorgente può essere un file o testo diretto
         rf_path = Path(args.rehydrate_from)
